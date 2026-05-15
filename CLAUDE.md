@@ -104,6 +104,34 @@ firms:
 
 See Section 6 of the briefing for the full validation sequence.
 
+## Current Code Status (as of 2026-05-15)
+
+### What exists
+- **`apps/web/`** — Next.js 15 app (TypeScript, Tailwind v4, App Router)
+  - Live prototype deployed at `https://dynamic-billing.vercel.app`
+  - GitHub: `github.com/mrisenmay31/dynamic-billing` (private, `mrisenmay31`)
+  - Single route at `/invoices` — hardcoded April 2026 demo data, no backend
+  - Features: collapsible invoice cards, editable hours/rate/description, live amount recalc, per-card and bulk approve, toast notifications, Generate Drafts animation
+  - Fonts: DM Serif Display / DM Sans / DM Mono; brand palette: `#2D6A4F` primary green
+  - Data: 3 real clients — Knoxville Title Agency LLC ($3,968.75), Baine & Company ($1,500), Knox Physical Therapy ($1,500)
+
+### What does NOT exist yet
+- No database, no Supabase project
+- No QB Time or QBO API integration
+- No OAuth flows
+- No worker process
+- No authentication
+- The full scaffold plan is at `/Users/mattrisenmay/.claude/plans/now-let-s-scaffold-the-squishy-gizmo.md`
+
+### Vercel deployment notes
+- Root Directory must be set to `apps/web` in Vercel Project Settings
+- Framework Preset: Next.js
+- Output Directory: default (`.next`) — do NOT override to `apps/web/.next`
+- Deploys automatically from `main` branch via GitHub integration
+
+### Next steps after May 20 call
+Build the real scaffold per the plan: Supabase schema, QB Time + QBO OAuth flows, polling worker on Railway, review queue wired to real data.
+
 ## Key Project Files
 
 - `qbo-billing-automation-briefing.md` — primary design reference; read before any architectural decisions
