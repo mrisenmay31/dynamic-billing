@@ -1,0 +1,121 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is **Dynamic Billing** — a product under the **Client Flow** umbrella by CTA Integrity. Client Flow is a suite of SaaS automation tools for accounting and CPA firms. Dynamic Billing automates monthly invoice generation for bookkeeping firms: pull approved time entries from **QuickBooks Time (QB Time)**, aggregate and round them per client, and create draft invoices in **QuickBooks Online (QBO)** for human review before sending.
+
+The primary design reference is `qbo-billing-automation-briefing.md`. Read it before making any architectural decisions.
+
+**Target buyer:** Small bookkeeping firms (1–10 staff) using QB Time + QBO. First pilot: Lea Ann Sanford, P&L Business Services, Knoxville TN.
+
+**BillerGenie:** Lea Ann uses BillerGenie Premium, which auto-syncs invoices from QBO. No BillerGenie API integration needed — invoices created in QBO flow there automatically.
+
+## Core Business Logic
+
+- **Aggregation:** All time entries for a client in a billing period collapse into a **single line item** — never individual entries on the invoice.
+- **Rounding:** Total hours per client rounded UP to the next 0.25 hours (ceiling), applied at month-end across the full month (not per entry). Formula: `ceil(total_seconds / 900) * 0.25`. Confirmed by invoice data — "nearest" is incorrect.
+- **Review gate is non-negotiable:** Invoices must go into a review queue for firm owner approval before sending. Never auto-send.
+- **Invoice description format:** Short, human-readable — default is simply **"Monthly Bookkeeping"**. Occasionally customized for context (e.g., "Monthly Bookkeeping Services-2026 recons caught up (1st Quarter)"). Raw staff notes from QB Time are never shown on the invoice. Description field must be editable in the review queue.
+- **Invoice date:** Always the 1st of the following month (e.g., April work → dated 05/01). Due date is 5 days later.
+- **QBO line item:** Product/service name is **"Hourly Accounting services"** — must match exactly for `ItemRef` lookup. Rate is $125/hr (uniform across all hourly clients for this pilot).
+- **Multiple staff per client:** Several employees log time to the same client in a single month. All entries are summed together into one line item — staff breakdown is never exposed on the invoice.
+- **High-maintenance client buffer:** ~5 clients get 15–45 min manually added at review time. No system flag — Lea Ann identifies them by name. The review queue must expose an editable hours field; default is the ceiling-rounded total, she bumps it up as needed. Amount recalculates as `edited_hours × $125`.
+
+## Integration Architecture
+
+### Two Separate OAuth Systems Per Firm
+QBO and QB Time use **completely independent** OAuth 2.0 flows. Every firm onboarded requires two separate authorization redirects and two token sets stored in the database.
+
+- **QBO OAuth:** via `developer.intuit.com` (scope: `com.intuit.quickbooks.accounting`). Access token TTL: 1 hour. Refresh token TTL: 100 days rolling.
+- **QB Time OAuth:** provisioned inside the QB Time web app under Feature Add-ons → API (not at developer.intuit.com). No scopes — token grants full account access.
+
+### Polling Architecture (QB Time Has No Webhooks)
+1. Call `GET /last_modified_timestamps` per firm — cheap check
+2. If timestamps advanced, fetch timesheets with `supplemental_data=yes`
+3. Filter approved entries client-side: include only timesheets where `timesheet.date ≤ supplemental_data.users[user_id].approved_to`
+
+The **QB Time Approvals Add-On** is what makes step 3 possible — it adds an `approved_to` date to each user object, indicating how far their timesheets have been reviewed. Without it, the `approved_to` field does not exist.
+
+**If Approvals Add-On is NOT enabled:** fall back to a simple date-range filter — pull all billable entries within the calendar month. This is likely safe for Lea Ann's workflow since her EA approves weekly and billing happens after month-end, so all entries are finalized before "generate drafts" is clicked. Confirm on May 20 call.
+
+The Approvals Add-On is a **data integrity gate**, not a billing trigger. Invoice generation is always initiated manually by the firm owner.
+
+### Invoice Generation Flow
+```
+Poll QB Time → fetch approved timesheets
+  → Group by jobcode/client, sum duration (seconds → hours)
+  → Ceiling-round to next 0.25 hrs per client
+  → Look up QBO Customer ID from jobcode-to-customer mapping table
+  → Store draft invoice payload in DB (do NOT create in QBO yet)
+  → Present in review queue
+  → On approval: POST to QBO invoice endpoint, then call /send
+```
+
+### Staging Strategy for Invoices
+Use **Option B** (hold in your DB until approved): do not create the invoice in QBO until the firm owner approves it. `EmailStatus` should be `"NotSet"` at creation; trigger `/send` explicitly after approval.
+
+### Jobcode-to-Customer Mapping
+There is no native shared identifier between QB Time jobcodes and QBO customer IDs. The app must maintain a mapping table, built during onboarding via name-matching + user confirmation UI. This table must be kept current as clients are added/renamed.
+
+### Required QBO Invoice Fields
+- `CustomerRef.value` (QBO customer ID)
+- `Line[].Amount` (must equal `UnitPrice * Qty` exactly — QBO does not auto-calculate)
+- `Line[].DetailType`: use `SalesItemLineDetail`
+- `Line[].SalesItemLineDetail.ItemRef.value` (missing triggers error 2020)
+- API version: `minorversion=75` minimum
+
+### Per-Tenant DB Schema (Key Fields)
+```
+firms:
+  qbo_realm_id          -- QBO tenant key; index carefully; mixing realms = data breach
+  qbo_access_token      -- encrypted
+  qbo_refresh_token     -- encrypted
+  qbo_access_expires_at
+  qbo_refresh_expires_at
+  qbt_access_token      -- encrypted
+  qbt_refresh_token     -- encrypted
+  qbt_access_expires_at
+  qbt_account_id
+```
+
+## Critical Constraints
+
+- **QB Time account cap:** Default 3 client accounts per app credential before Intuit requires partner expansion. Start the expansion conversation with Intuit before hitting the cap.
+- **Intuit App Partner Program (July 2025):** Builder tier (free, self-attested compliance questionnaire) is sufficient for pilot. Full Marketplace review required only to list on apps.com.
+- **QB Time rate limit:** 300 requests per 5-minute window per token.
+- **QB Time timesheets endpoint pagination:** Use `limit` parameter (max 200), not `per_page` (deprecated).
+
+## Open Questions (confirm on May 20 call with Lea Ann)
+
+- **Billing trigger:** manual "generate drafts" button, or auto-prepared on the 1st of each month?
+- **QB Time Approvals Add-On:** enabled on her account? Determines whether to use approval-date filter or simple date-range filter.
+- **Flat-rate clients:** do they appear in QB Time exports? If so, system needs to skip or handle them separately.
+- **Multiple billing rates:** is $125/hr universal for all hourly clients, or do some differ?
+- **QBO Item ID:** need the exact internal ID for "Hourly Accounting services" item during onboarding setup.
+
+## Open Technical Questions (pre-build validation)
+
+- QB Time refresh token TTL (undocumented — requires hands-on testing)
+- Whether `last_modified_timestamps` distinguishes user approval changes from timesheet edits
+- Whether any internal linkage exists between a firm's QBO `realmId` and QB Time account ID
+- Whether QB Time free trial includes the Approvals Add-On
+
+See Section 6 of the briefing for the full validation sequence.
+
+## Key Project Files
+
+- `qbo-billing-automation-briefing.md` — primary design reference; read before any architectural decisions
+- `lea-ann-sample-data-analysis.md` — confirmed findings from Lea Ann's sample invoices + time report (May 14, 2026)
+- `call_transcripts/2026-05-13-matt-lea-ann-pl-business-services.md` — full call transcript with timestamped Fathom links
+- `sample_data/time_reports/P&L Client Time Entires.xlsx` — April 2026 QB Time export (3 clients, real data)
+- `sample_data/invoices/Invoice 5101/5138/5141.pdf` — sample invoices for Baine & Company, Knox Physical Therapy, Knoxville Title Agency LLC
+
+## Key External Resources
+
+- QB Time API: `https://rest.tsheets.com/api/v1` (docs: `tsheetsteam.github.io/api_docs/`)
+- QBO Invoice API: `https://quickbooks.api.intuit.com/v3/company/{realmId}/invoice`
+- QBO sandbox: `https://sandbox-quickbooks.api.intuit.com/v3/company/{realmId}/invoice`
+- QBO OAuth: `https://appcenter.intuit.com/connect/oauth2`
+- Call transcript (Lea Ann Sanford, May 13 2026): `https://fathom.video/calls/671102793`
