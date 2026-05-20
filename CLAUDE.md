@@ -135,7 +135,18 @@ All UI lives in this single file. Five nav views in a persistent left sidebar (`
    - Bottom action bar: pending count + total + "Create all QBO drafts" button
    - Toast on draft creation: "Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent."
 
-3. **All Time Entries** — placeholder
+3. **All Time Entries** — fully implemented (commit `520719f`):
+   - Flattened from `TEMPLATES` via `ALL_ENTRIES` constant — single source of truth, no duplicate data
+   - Page header with "April 2026 Import — QuickBooks Time" sub-label
+   - 4-stat bar (Total Entries, Total Raw Time, Total Raw Amount, Clients) — updates dynamically with filters
+   - Contextual note panel (left green accent border) explaining data provenance
+   - Sticky filter bar: search by staff note (with X clear), client dropdown, employee dropdown (derived dynamically), billable dropdown, date sort toggle (Oldest/Newest First), Clear filters link
+   - Full 9-column table: Date, Client, Employee, Product/Service, Staff Note (most space, wraps), Duration, Rate, Billable (green pill), Amount (right-aligned, DM Mono)
+   - Alternating row backgrounds, hover highlight, no vertical borders
+   - Summary footer row (`#f3f4f6`) with entry count, summed duration, summed amount for filtered rows
+   - Empty state with Search icon, heading, subtext, and Clear filters button
+   - Total dataset: 88 entries, 55:15 raw time, $6,906.11 raw amount (per-entry rounded), 7 unique employees
+
 4. **Client Rules** — placeholder
 5. **Settings** — placeholder
 
@@ -143,6 +154,17 @@ All UI lives in this single file. Five nav views in a persistent left sidebar (`
 - Knoxville Title Agency LLC: 52 entries, 31:34 raw → 31.75 rounded hrs → $3,968.75
 - Baine & Company: 11 entries, 11:53 raw → 12.00 rounded hrs → $1,500.00
 - Knox Physical Therapy: 25 entries, 11:48 raw → 12.00 rounded hrs → $1,500.00
+
+#### Utility functions in page.tsx
+- `ceilToQuarterHour(totalMinutes)` — rounding formula
+- `formatMinutes`, `formatHHMM`, `formatCurrency`, `formatHours` — display helpers
+- `sumDurations(durations[])` — sum HH:MM strings to HH:MM (integer minutes, no float drift)
+- `durationToAmount(duration, rate)` — per-entry amount rounded to 2 decimal places
+
+#### Data constants
+- `DEFAULT_RATE = 125`
+- `TEMPLATES: InvoiceTemplate[]` — 3 clients, entries as `{ date, staff, note, duration }`
+- `ALL_ENTRIES: FlatEntry[]` — flattened from TEMPLATES, adds `client`, year to date, `productService`, `billable`, `amount`
 
 #### Calculation logic
 ```
@@ -158,6 +180,7 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 - No OAuth flows
 - No worker process
 - No authentication
+- Client Rules and Settings views are still placeholders (next up: `step-05-06-client-rules-and-settings.md`)
 - The full scaffold plan is at `/Users/mattrisenmay/.claude/plans/now-let-s-scaffold-the-squishy-gizmo.md`
 
 ### Vercel deployment notes
