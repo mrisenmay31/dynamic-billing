@@ -233,6 +233,187 @@ function PlaceholderView({ title }: { title: string }) {
   );
 }
 
+/* ─── Billing Run Dashboard ──────────────────────────────────── */
+function BillingRunDashboard() {
+  const steps = [
+    { label: "Imported QBO Time", state: "done" },
+    { label: "Reviewed Time", state: "active" },
+    { label: "Draft Invoices Prepared", state: "upcoming" },
+    { label: "QBO Drafts Created", state: "upcoming" },
+  ] as const;
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="px-8 py-6 space-y-6 max-w-4xl">
+
+        {/* Header */}
+        <div>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="font-display text-2xl text-gray-900 leading-tight">May 2026 Billing Run</h1>
+              <p className="text-sm mt-0.5 text-gray-500">April 2026 Time Entries</p>
+              <p className="text-xs mt-1 text-gray-400">April's time is billed in May — this is standard practice.</p>
+            </div>
+            <span
+              className="mt-1 shrink-0 inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold"
+              style={{ backgroundColor: "#FFF3E0", color: "#C2410C" }}
+            >
+              In Review
+            </span>
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        <div className="grid grid-cols-4 gap-4">
+          {[
+            { label: "Clients Ready for Review", value: "3", mono: false },
+            { label: "Proposed Billing", value: "$6,968.75", mono: true },
+            { label: "Rounded Billable Hours", value: "55.75 hrs", mono: true },
+            { label: "Estimated Time Saved", value: "2.5+ hours", mono: false },
+          ].map(({ label, value, mono }) => (
+            <div key={label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider leading-tight">{label}</p>
+              <p className={`mt-2 text-2xl font-medium text-gray-900 ${mono ? "font-mono" : "font-display"}`}>
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-5">Billing Run Progress</p>
+          <div className="flex items-start">
+            {steps.map((step, i) => (
+              <div key={step.label} className="flex items-start flex-1 relative">
+                {/* Connector line */}
+                {i < steps.length - 1 && (
+                  <div
+                    className="absolute top-3.5 left-1/2 w-full h-px"
+                    style={{
+                      backgroundColor: step.state === "done" ? "#2D6A4F" : "#e5e7eb",
+                      transform: "translateY(-50%)",
+                    }}
+                  />
+                )}
+                {/* Circle + label */}
+                <div className="flex flex-col items-center flex-1 relative z-10">
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                    style={{
+                      backgroundColor:
+                        step.state === "done" ? "#2D6A4F" :
+                        step.state === "active" ? "#52B788" :
+                        "white",
+                      border:
+                        step.state === "upcoming" ? "2px solid #e5e7eb" : "none",
+                    }}
+                  >
+                    {step.state === "done" && (
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                    {step.state === "active" && (
+                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                  <p
+                    className="mt-2 text-xs text-center leading-snug px-1"
+                    style={{
+                      color: step.state === "upcoming" ? "#9ca3af" : "#111827",
+                      fontWeight: step.state === "active" ? 600 : 400,
+                    }}
+                  >
+                    {step.label}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Billing totals breakdown */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">Billing Totals — April 2026</p>
+          <div className="divide-y divide-gray-100">
+            {[
+              { label: "Total raw time imported", value: "55:15" },
+              { label: "Total raw amount (pre-rounding)", value: "$6,906.11" },
+              { label: "Total rounded invoice hours", value: "55.75 hrs" },
+              { label: "Total proposed billing", value: "$6,968.75" },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between py-3">
+                <span className="text-sm text-gray-500">{label}</span>
+                <span className="font-mono text-sm font-medium text-gray-900">{value}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between py-3">
+              <span className="text-sm text-gray-500">Rounding / adjustment difference</span>
+              <span
+                className="font-mono text-sm font-semibold px-2 py-0.5 rounded"
+                style={{ color: "#2D6A4F", backgroundColor: "#F0FDF4" }}
+              >
+                +$62.64
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Review summary */}
+        <div
+          className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5 border-l-4"
+          style={{ borderLeftColor: "#2D6A4F" }}
+        >
+          <p className="text-sm text-gray-700 leading-relaxed">
+            May 2026 billing is ready for review. We found{" "}
+            <span className="font-semibold text-gray-900">3 client invoices</span>,{" "}
+            <span className="font-semibold text-gray-900">55.75 rounded billable hours</span>, and{" "}
+            <span className="font-semibold text-gray-900">$6,968.75</span> in proposed billing.
+            Instead of manually grouping time and rebuilding invoices, review the prepared drafts
+            and create QuickBooks drafts when ready.
+          </p>
+          <div className="mt-4 flex items-center gap-4 flex-wrap">
+            <span
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full"
+              style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}
+            >
+              Estimated billing prep time: 5–10 minutes
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gray-100 text-gray-500">
+              Previous manual process: 2–3 hours
+            </span>
+          </div>
+        </div>
+
+        {/* Product fit callout */}
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
+          <p className="text-xs font-semibold text-gray-700 mb-1">How this fits your existing tools</p>
+          <p className="text-xs text-gray-500 leading-relaxed mb-3">
+            This dashboard does not replace TaxDome, QuickBooks, or BillerGenie. It sits between
+            QBO Time and QuickBooks invoices to turn reviewed time into prepared invoice drafts.
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {["QBO Time", "Billing Review Dashboard", "QuickBooks Draft Invoice", "BillerGenie Payment Portal"].map(
+              (item, i, arr) => (
+                <span key={item} className="flex items-center gap-1.5">
+                  <span className="font-mono text-xs text-gray-600 bg-white border border-gray-200 px-2 py-1 rounded">
+                    {item}
+                  </span>
+                  {i < arr.length - 1 && (
+                    <span className="font-mono text-xs text-gray-400">→</span>
+                  )}
+                </span>
+              )
+            )}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 /* ─── Invoice Queue view ─────────────────────────────────────── */
 function InvoiceQueueView() {
   const [states, setStates] = useState<Record<string, InvoiceState>>(
@@ -677,7 +858,7 @@ export default function InvoicesPage() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {activeView === "invoice-queue" && <InvoiceQueueView />}
-        {activeView === "billing-run" && <PlaceholderView title="Billing Run" />}
+        {activeView === "billing-run" && <BillingRunDashboard />}
         {activeView === "time-entries" && <PlaceholderView title="All Time Entries" />}
         {activeView === "client-rules" && <PlaceholderView title="Client Rules" />}
         {activeView === "settings" && <PlaceholderView title="Settings" />}
