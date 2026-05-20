@@ -113,9 +113,14 @@ See Section 6 of the briefing for the full validation sequence.
   - Single route at `/invoices` — hardcoded April 2026 demo data, no backend
 
 #### App shell (`apps/web/src/app/invoices/page.tsx`)
-All UI lives in this single file. Five nav views in a persistent left sidebar (`#2D6A4F`):
+All UI lives in this single file. All five nav views are fully implemented. Persistent left sidebar (`#2D6A4F`). Latest commit: `3f483b0`.
 
-1. **Billing Run** (default on load) — full dashboard:
+**Shared state (lifted to `InvoicesPage`):**
+- `sharedHighTouch: Record<string, boolean>` — high-touch flag per client, shared between Invoice Queue and Client Rules
+- `sharedDescriptions: Record<string, string>` — invoice description per client, shared between Invoice Queue and Client Rules
+- Changing either in Client Rules immediately reflects in the Invoice Queue expanded card, and vice versa
+
+1. **Billing Run** (default on load):
    - Page header: "May 2026 Billing Run / April 2026 Time Entries" with "In Review" badge
    - 4 summary cards: Clients Ready, Proposed Billing ($6,968.75), Rounded Hours (55.75), Time Saved
    - 4-step progress indicator (step 2 "Reviewed Time" is active)
@@ -129,13 +134,13 @@ All UI lives in this single file. Five nav views in a persistent left sidebar (`
      1. **Billing Math Summary** — green-tinted panel with static rows (raw time, decimal hrs, rounded hrs, rate) + live rows (manual adjustment, final qty, invoice total)
      2. **Client-Facing Invoice Preview** — QBO-style document with P&L Business Services header, Bill To, date 05/01/2026, due 05/06/2026, one line item (Hourly Accounting services), live qty/amount
      3. **Raw QBO Time Entries** — scrollable table with all complete entries + totals row (entry count, raw HH:MM, pre-rounding amount)
-     4. **Adjustment Controls** — high-touch toggle (reveals amber warning + +0.25/+0.50/+0.75/Custom quick-add buttons), description textarea, final qty input, manual adjustment input, adjustment reason, rate, internal note
+     4. **Adjustment Controls** — high-touch toggle (shared with Client Rules; reveals amber warning + +0.25/+0.50/+0.75/Custom quick-add buttons), description textarea (shared with Client Rules), final qty input, manual adjustment input, adjustment reason, rate, internal note
      5. **Card footer** — invoice total + "Create QuickBooks Draft" button
    - Stats row: Drafts Ready, Total Hours, Total Billed
    - Bottom action bar: pending count + total + "Create all QBO drafts" button
    - Toast on draft creation: "Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent."
 
-3. **All Time Entries** — fully implemented (commit `520719f`):
+3. **All Time Entries** — fully implemented:
    - Flattened from `TEMPLATES` via `ALL_ENTRIES` constant — single source of truth, no duplicate data
    - Page header with "April 2026 Import — QuickBooks Time" sub-label
    - 4-stat bar (Total Entries, Total Raw Time, Total Raw Amount, Clients) — updates dynamically with filters
@@ -147,24 +152,37 @@ All UI lives in this single file. Five nav views in a persistent left sidebar (`
    - Empty state with Search icon, heading, subtext, and Clear filters button
    - Total dataset: 88 entries, 55:15 raw time, $6,906.11 raw amount (per-entry rounded), 7 unique employees
 
-4. **Client Rules** — placeholder
-5. **Settings** — placeholder
+4. **Client Rules** — fully implemented:
+   - **Firm-Wide Defaults** panel: editable hourly rate, product/service, invoice description, invoice terms, due-date offset; rounding rule row is read-only with explanatory note
+   - **Per-Client Overrides** table: per-client hourly rate, invoice description (with "custom" badge when non-default), high-touch toggle (shared with Invoice Queue), notes field; amber left border + background tint on high-touch rows
+   - **How Rounding Works** reference panel: formula in monospace, example table (11h 53m → 12.00 hrs, etc.)
+   - **High-Touch Client Buffer** callout: explains the 15–45 min manual buffer workflow
+
+5. **Settings** — fully implemented:
+   - **Integrations & Data Sources** panel: QBO Time import source (with future API note), QuickBooks Online (green "Connected" badge), BillerGenie (green "Active" badge), BillerGenie plan + pricing
+   - **Billing Behavior** panel: Auto-send Off (red pill), Require approval On (green pill), invoice date rule, due date rule, rounding method
+   - **How This Fits Your Existing Tools** callout: pipeline chip row with "Billing Review Dashboard" highlighted in green, ArrowRight icons between chips
+   - **About** panel: prototype attribution, DM Mono data summary line
 
 #### Client data (complete, exact April 2026 QBO export)
 - Knoxville Title Agency LLC: 52 entries, 31:34 raw → 31.75 rounded hrs → $3,968.75
-- Baine & Company: 11 entries, 11:53 raw → 12.00 rounded hrs → $1,500.00
+- Baine & Company: 11 entries, 11:53 raw → 12.00 rounded hrs → $1,500.00 (non-default description)
 - Knox Physical Therapy: 25 entries, 11:48 raw → 12.00 rounded hrs → $1,500.00
 
 #### Utility functions in page.tsx
-- `ceilToQuarterHour(totalMinutes)` — rounding formula
-- `formatMinutes`, `formatHHMM`, `formatCurrency`, `formatHours` — display helpers
+- `ceilToQuarterHour(totalMinutes)` — ceiling rounding formula
+- `formatHHMM`, `formatCurrency`, `formatHours` — display helpers
 - `sumDurations(durations[])` — sum HH:MM strings to HH:MM (integer minutes, no float drift)
 - `durationToAmount(duration, rate)` — per-entry amount rounded to 2 decimal places
+- `inputFocusHandlers()` — shared green focus ring for all inputs
 
 #### Data constants
 - `DEFAULT_RATE = 125`
 - `TEMPLATES: InvoiceTemplate[]` — 3 clients, entries as `{ date, staff, note, duration }`
 - `ALL_ENTRIES: FlatEntry[]` — flattened from TEMPLATES, adds `client`, year to date, `productService`, `billable`, `amount`
+
+#### Shared components
+- `ToggleSwitch` — reusable toggle used in Invoice Queue and Client Rules
 
 #### Calculation logic
 ```
@@ -180,7 +198,6 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 - No OAuth flows
 - No worker process
 - No authentication
-- Client Rules and Settings views are still placeholders (next up: `step-05-06-client-rules-and-settings.md`)
 - The full scaffold plan is at `/Users/mattrisenmay/.claude/plans/now-let-s-scaffold-the-squishy-gizmo.md`
 
 ### Vercel deployment notes
