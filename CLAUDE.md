@@ -104,16 +104,53 @@ firms:
 
 See Section 6 of the briefing for the full validation sequence.
 
-## Current Code Status (as of 2026-05-15)
+## Current Code Status (as of 2026-05-19)
 
 ### What exists
-- **`apps/web/`** — Next.js 15 app (TypeScript, Tailwind v4, App Router)
+- **`apps/web/`** — Next.js 15 app (TypeScript, Tailwind v4, App Router, `lucide-react`)
   - Live prototype deployed at `https://dynamic-billing.vercel.app`
   - GitHub: `github.com/mrisenmay31/dynamic-billing` (private, `mrisenmay31`)
   - Single route at `/invoices` — hardcoded April 2026 demo data, no backend
-  - Features: collapsible invoice cards, editable hours/rate/description, live amount recalc, per-card and bulk approve, toast notifications, Generate Drafts animation
-  - Fonts: DM Serif Display / DM Sans / DM Mono; brand palette: `#2D6A4F` primary green
-  - Data: 3 real clients — Knoxville Title Agency LLC ($3,968.75), Baine & Company ($1,500), Knox Physical Therapy ($1,500)
+
+#### App shell (`apps/web/src/app/invoices/page.tsx`)
+All UI lives in this single file. Five nav views in a persistent left sidebar (`#2D6A4F`):
+
+1. **Billing Run** (default on load) — full dashboard:
+   - Page header: "May 2026 Billing Run / April 2026 Time Entries" with "In Review" badge
+   - 4 summary cards: Clients Ready, Proposed Billing ($6,968.75), Rounded Hours (55.75), Time Saved
+   - 4-step progress indicator (step 2 "Reviewed Time" is active)
+   - Billing totals breakdown panel with +$62.64 rounding highlight
+   - Review summary with time-saved comparison chips
+   - Product fit callout with `QBO Time → ... → BillerGenie` pill chain
+
+2. **Invoice Queue** — review queue with 3 real April 2026 client cards:
+   - Collapsed card: client name, invoice #, amount, hrs@rate, **3-state status dropdown** (Needs Review / Ready to Draft / Draft Created in QBO), expand chevron
+   - Expanded card sections (in order):
+     1. **Billing Math Summary** — green-tinted panel with static rows (raw time, decimal hrs, rounded hrs, rate) + live rows (manual adjustment, final qty, invoice total)
+     2. **Client-Facing Invoice Preview** — QBO-style document with P&L Business Services header, Bill To, date 05/01/2026, due 05/06/2026, one line item (Hourly Accounting services), live qty/amount
+     3. **Raw QBO Time Entries** — scrollable table with all complete entries + totals row (entry count, raw HH:MM, pre-rounding amount)
+     4. **Adjustment Controls** — high-touch toggle (reveals amber warning + +0.25/+0.50/+0.75/Custom quick-add buttons), description textarea, final qty input, manual adjustment input, adjustment reason, rate, internal note
+     5. **Card footer** — invoice total + "Create QuickBooks Draft" button
+   - Stats row: Drafts Ready, Total Hours, Total Billed
+   - Bottom action bar: pending count + total + "Create all QBO drafts" button
+   - Toast on draft creation: "Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent."
+
+3. **All Time Entries** — placeholder
+4. **Client Rules** — placeholder
+5. **Settings** — placeholder
+
+#### Client data (complete, exact April 2026 QBO export)
+- Knoxville Title Agency LLC: 52 entries, 31:34 raw → 31.75 rounded hrs → $3,968.75
+- Baine & Company: 11 entries, 11:53 raw → 12.00 rounded hrs → $1,500.00
+- Knox Physical Therapy: 25 entries, 11:48 raw → 12.00 rounded hrs → $1,500.00
+
+#### Calculation logic
+```
+rawMinutes (static) → decimalHours = rawMinutes/60 → roundedHours = ceilToQuarterHour(rawMinutes)
+→ finalQty = roundedHours + manualAdjustment (user input, default 0.00)
+→ invoiceTotal = finalQty × rate
+```
+All display surfaces (Billing Math Summary, Invoice Preview, card header, stats, action bar) derive from the same `state.hours` value.
 
 ### What does NOT exist yet
 - No database, no Supabase project
