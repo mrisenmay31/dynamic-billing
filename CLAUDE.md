@@ -113,7 +113,7 @@ See Section 6 of the briefing for the full validation sequence.
   - Single route at `/invoices` — hardcoded April 2026 demo data, no backend
 
 #### App shell (`apps/web/src/app/invoices/page.tsx`)
-All UI lives in this single file. All five nav views are fully implemented. Persistent left sidebar (`#2D6A4F`). Latest commit: `3f483b0`.
+All UI lives in this single file. All five nav views are fully implemented. Persistent left sidebar (`#2D6A4F`). Latest commit: see `git log`.
 
 **Shared state (lifted to `InvoicesPage`):**
 - `sharedHighTouch: Record<string, boolean>` — high-touch flag per client, shared between Invoice Queue and Client Rules
@@ -129,7 +129,8 @@ All UI lives in this single file. All five nav views are fully implemented. Pers
    - Product fit callout with `QBO Time → ... → BillerGenie` pill chain
 
 2. **Invoice Queue** — review queue with 3 real April 2026 client cards:
-   - Collapsed card: client name, invoice #, amount, hrs@rate, **3-state status dropdown** (Needs Review / Ready to Draft / Draft Created in QBO), expand chevron
+   - Page header: **"Import from QBO Time"** button (simulates QB Time pull); toast: "April 2026 time entries imported from QuickBooks Time. Review drafts below."
+   - Collapsed card: client name, invoice # (numeric only, e.g. 5141 — no INV- prefix), amount, hrs@rate, **3-state status dropdown** (Needs Review / Ready to Draft / Draft Created in QBO), expand chevron
    - Expanded card sections (in order):
      1. **Billing Math Summary** — green-tinted panel with static rows (raw time, decimal hrs, rounded hrs, rate) + live rows (manual adjustment, final qty, invoice total)
      2. **Client-Facing Invoice Preview** — QBO-style document with P&L Business Services header, Bill To, date 05/01/2026, due 05/06/2026, one line item (Hourly Accounting services), live qty/amount
@@ -137,8 +138,8 @@ All UI lives in this single file. All five nav views are fully implemented. Pers
      4. **Adjustment Controls** — high-touch toggle (shared with Client Rules; reveals amber warning + +0.25/+0.50/+0.75/Custom quick-add buttons), description textarea (shared with Client Rules), final qty input, manual adjustment input, adjustment reason, rate, internal note
      5. **Card footer** — invoice total + "Create QuickBooks Draft" button
    - Stats row: Drafts Ready, Total Hours, Total Billed
-   - Bottom action bar: pending count + total + "Create all QBO drafts" button
-   - Toast on draft creation: "Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent."
+   - Bottom action bar: pending count + total + **"Create all QBO drafts"** button with muted sub-label "Sends to QuickBooks Online"
+   - Toast on individual draft creation: "Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent."
 
 3. **All Time Entries** — fully implemented:
    - Flattened from `TEMPLATES` via `ALL_ENTRIES` constant — single source of truth, no duplicate data
@@ -150,7 +151,7 @@ All UI lives in this single file. All five nav views are fully implemented. Pers
    - Alternating row backgrounds, hover highlight, no vertical borders
    - Summary footer row (`#f3f4f6`) with entry count, summed duration, summed amount for filtered rows
    - Empty state with Search icon, heading, subtext, and Clear filters button
-   - Total dataset: 88 entries, 55:15 raw time, $6,906.11 raw amount (per-entry rounded), 7 unique employees
+   - Total dataset: 88 entries, 55:15 raw time, $6,906.25 raw amount (per-entry rounded), 7 unique employees
 
 4. **Client Rules** — fully implemented:
    - **Firm-Wide Defaults** panel: editable hourly rate, product/service, invoice description, invoice terms, due-date offset; rounding rule row is read-only with explanatory note

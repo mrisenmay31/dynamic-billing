@@ -108,7 +108,7 @@ const TEMPLATES: InvoiceTemplate[] = [
     id: "knoxville-title",
     client: "Knoxville Title Agency LLC",
     billTo: "Chase Reno",
-    invoiceNum: "INV-5141",
+    invoiceNum: "5141",
     rawMinutes: 1894,
     defaultDescription: "Monthly Bookkeeping",
     entries: [
@@ -169,7 +169,7 @@ const TEMPLATES: InvoiceTemplate[] = [
   {
     id: "baine",
     client: "Baine & Company",
-    invoiceNum: "INV-5101",
+    invoiceNum: "5101",
     rawMinutes: 713,
     defaultDescription: "Monthly Bookkeeping Services-2026 recons caught up (1st Quarter)",
     entries: [
@@ -189,7 +189,7 @@ const TEMPLATES: InvoiceTemplate[] = [
   {
     id: "knox-pt",
     client: "Knox Physical Therapy",
-    invoiceNum: "INV-5138",
+    invoiceNum: "5138",
     rawMinutes: 708,
     defaultDescription: "Monthly Bookkeeping",
     entries: [
@@ -422,7 +422,7 @@ function BillingRunDashboard() {
           <div className="divide-y divide-gray-100">
             {[
               { label: "Total raw time imported", value: "55:15" },
-              { label: "Total raw amount (pre-rounding)", value: "$6,906.11" },
+              { label: "Total raw amount (pre-rounding)", value: "$6,906.25" },
               { label: "Total rounded invoice hours", value: "55.75 hrs" },
               { label: "Total proposed billing", value: "$6,968.75" },
             ].map(({ label, value }) => (
@@ -550,7 +550,7 @@ function InvoiceQueueView({
     setGenerating(true);
     setTimeout(() => {
       setGenerating(false);
-      addToast("3 draft invoices generated for April 2026");
+      addToast("April 2026 time entries imported from QuickBooks Time. Review drafts below.");
     }, 1400);
   }
 
@@ -600,7 +600,7 @@ function InvoiceQueueView({
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                Generate Drafts
+                Import from QBO Time
               </>
             )}
           </button>
@@ -1015,7 +1015,10 @@ function InvoiceQueueView({
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
-            Create all QBO drafts
+            <span className="flex flex-col items-start">
+              <span>Create all QBO drafts</span>
+              <span className="text-xs opacity-60 font-normal">Sends to QuickBooks Online</span>
+            </span>
           </button>
         </div>
       </div>
@@ -1671,7 +1674,7 @@ function SettingsView() {
                 This prototype uses real April 2026 data from QuickBooks Time. No backend, no API connections, no live QuickBooks integration. All invoice actions simulate the real workflow — when the product is live, &quot;Create QuickBooks Draft&quot; will POST directly to the QBO Invoice API.
               </p>
               <p className="font-mono text-xs text-gray-500">
-                3 clients · 55 time entries · $6,968.75 in proposed billing
+                3 clients · 88 time entries · $6,968.75 in proposed billing
               </p>
             </div>
           </div>
