@@ -353,7 +353,10 @@ function inputFocusHandlers() {
 }
 
 /* ─── Billing Run Dashboard ──────────────────────────────────── */
-function BillingRunDashboard() {
+function BillingRunDashboard({ invoiceStates }: { invoiceStates: Record<string, InvoiceState> }) {
+  const liveRoundedHours = TEMPLATES.reduce((sum, t) => sum + invoiceStates[t.id].hours, 0);
+  const liveTotalBilling = TEMPLATES.reduce((sum, t) => sum + invoiceStates[t.id].hours * invoiceStates[t.id].rate, 0);
+
   const steps = [
     { label: "Imported QBO Time", state: "done" },
     { label: "Reviewed Time", state: "active" },
@@ -380,8 +383,8 @@ function BillingRunDashboard() {
         <div className="grid grid-cols-4 gap-4">
           {[
             { label: "Clients Ready for Review", value: "3", mono: false },
-            { label: "Proposed Billing", value: "$6,968.75", mono: true },
-            { label: "Rounded Billable Hours", value: "55.75 hrs", mono: true },
+            { label: "Proposed Billing", value: formatCurrency(liveTotalBilling), mono: true },
+            { label: "Rounded Billable Hours", value: `${formatHours(liveRoundedHours)} hrs`, mono: true },
             { label: "Estimated Time Saved", value: "2.5+ hours", mono: false },
           ].map(({ label, value, mono }) => (
             <div key={label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4">
@@ -423,8 +426,8 @@ function BillingRunDashboard() {
             {[
               { label: "Total raw time imported", value: "55:15" },
               { label: "Total raw amount (pre-rounding)", value: "$6,906.25" },
-              { label: "Total rounded invoice hours", value: "55.75 hrs" },
-              { label: "Total proposed billing", value: "$6,968.75" },
+              { label: "Total rounded invoice hours", value: `${formatHours(liveRoundedHours)} hrs` },
+              { label: "Total proposed billing", value: formatCurrency(liveTotalBilling) },
             ].map(({ label, value }) => (
               <div key={label} className="flex items-center justify-between py-3">
                 <span className="text-sm text-gray-500">{label}</span>
@@ -442,8 +445,8 @@ function BillingRunDashboard() {
           <p className="text-sm text-gray-700 leading-relaxed">
             May 2026 billing is ready for review. We found{" "}
             <span className="font-semibold text-gray-900">3 client invoices</span>,{" "}
-            <span className="font-semibold text-gray-900">55.75 rounded billable hours</span>, and{" "}
-            <span className="font-semibold text-gray-900">$6,968.75</span> in proposed billing.
+            <span className="font-semibold text-gray-900">{formatHours(liveRoundedHours)} rounded billable hours</span>, and{" "}
+            <span className="font-semibold text-gray-900">{formatCurrency(liveTotalBilling)}</span> in proposed billing.
             Instead of manually grouping time and rebuilding invoices, review the prepared drafts and create QuickBooks drafts when ready.
           </p>
           <div className="mt-4 flex items-center gap-4 flex-wrap">
@@ -481,27 +484,20 @@ function InvoiceQueueView({
   setHighTouch,
   sharedDescriptions,
   setDescription,
+  firmDefaultRate: _firmDefaultRate,
+  sharedClientRates: _sharedClientRates,
+  invoiceStates: states,
+  updateInvoiceState: updateState,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
   sharedDescriptions: Record<string, string>;
   setDescription: (id: string, val: string) => void;
+  firmDefaultRate: number;
+  sharedClientRates: Record<string, number>;
+  invoiceStates: Record<string, InvoiceState>;
+  updateInvoiceState: (id: string, update: Partial<InvoiceState>) => void;
 }) {
-  const [states, setStates] = useState<Record<string, InvoiceState>>(
-    Object.fromEntries(
-      TEMPLATES.map((t) => [
-        t.id,
-        {
-          hours: ceilToQuarterHour(t.rawMinutes),
-          rate: DEFAULT_RATE,
-          internalNote: "",
-          expanded: false,
-          status: "ready_to_draft" as InvoiceStatus,
-          adjustmentReason: "",
-        },
-      ])
-    )
-  );
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [generating, setGenerating] = useState(false);
 
@@ -516,10 +512,6 @@ function InvoiceQueueView({
     const id = Math.random().toString(36).slice(2);
     setToasts((prev) => [...prev, { id, message }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
-  }
-
-  function updateState(id: string, update: Partial<InvoiceState>) {
-    setStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
   }
 
   function createDraft(id: string) {
@@ -1270,22 +1262,26 @@ function ClientRulesView({
   setHighTouch,
   sharedDescriptions,
   setDescription,
+  firmDefaultRate,
+  setFirmDefaultRate,
+  sharedClientRates,
+  setClientRate,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
   sharedDescriptions: Record<string, string>;
   setDescription: (id: string, val: string) => void;
+  firmDefaultRate: number;
+  setFirmDefaultRate: (val: number) => void;
+  sharedClientRates: Record<string, number>;
+  setClientRate: (id: string, val: number) => void;
 }) {
   const [defaults, setDefaults] = useState({
-    hourlyRate: 125,
     productService: "Hourly Accounting services",
     invoiceDescription: "Monthly Bookkeeping",
     invoiceTerms: "Due on receipt",
     dueDateOffset: 5,
   });
-  const [clientRates, setClientRates] = useState<Record<string, number>>(
-    Object.fromEntries(TEMPLATES.map((t) => [t.id, DEFAULT_RATE]))
-  );
   const [clientNotes, setClientNotes] = useState<Record<string, string>>(
     Object.fromEntries(TEMPLATES.map((t) => [t.id, ""]))
   );
@@ -1316,8 +1312,8 @@ function ClientRulesView({
                   type="number"
                   step={1}
                   min={0}
-                  value={defaults.hourlyRate}
-                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setDefaults((d) => ({ ...d, hourlyRate: v })); }}
+                  value={firmDefaultRate}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setFirmDefaultRate(v); }}
                   className="w-full text-sm font-mono border border-gray-200 rounded-lg pl-6 pr-3 py-2 text-gray-900 focus:outline-none transition-shadow"
                   {...focusHandlers}
                 />
@@ -1421,8 +1417,8 @@ function ClientRulesView({
                             type="number"
                             step={1}
                             min={0}
-                            value={clientRates[t.id]}
-                            onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setClientRates((r) => ({ ...r, [t.id]: v })); }}
+                            value={sharedClientRates[t.id]}
+                            onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setClientRate(t.id, v); }}
                             className="w-full text-sm font-mono border border-gray-200 rounded-lg pl-6 pr-2 py-2 text-gray-900 focus:outline-none transition-shadow"
                             {...focusHandlers}
                           />
@@ -1558,11 +1554,8 @@ function SettingsView() {
               <span className="text-sm text-gray-500 shrink-0">Invoice destination</span>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <span className="text-sm text-gray-800">QuickBooks Online</span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}>
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Connected
+                <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
+                  Ready to Connect
                 </span>
                 <span className="text-xs text-gray-400">Draft invoices only</span>
               </div>
@@ -1572,11 +1565,8 @@ function SettingsView() {
               <span className="text-sm text-gray-500 shrink-0">Payment portal</span>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <span className="text-sm text-gray-800">BillerGenie</span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}>
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Active
+                <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
+                  Syncs via Premium Plan
                 </span>
                 <span className="text-xs text-gray-400">Auto-syncs from QBO via Premium plan</span>
               </div>
@@ -1706,12 +1696,37 @@ export default function InvoicesPage() {
   const [sharedDescriptions, setSharedDescriptions] = useState<Record<string, string>>(
     Object.fromEntries(TEMPLATES.map((t) => [t.id, t.defaultDescription]))
   );
+  const [firmDefaultRate, setFirmDefaultRate] = useState<number>(DEFAULT_RATE);
+  const [sharedClientRates, setSharedClientRates] = useState<Record<string, number>>(
+    Object.fromEntries(TEMPLATES.map((t) => [t.id, DEFAULT_RATE]))
+  );
 
   function setHighTouch(id: string, val: boolean) {
     setSharedHighTouch((prev) => ({ ...prev, [id]: val }));
   }
   function setDescription(id: string, val: string) {
     setSharedDescriptions((prev) => ({ ...prev, [id]: val }));
+  }
+  function setClientRate(id: string, val: number) {
+    setSharedClientRates((prev) => ({ ...prev, [id]: val }));
+  }
+  const [invoiceStates, setInvoiceStates] = useState<Record<string, InvoiceState>>(
+    Object.fromEntries(
+      TEMPLATES.map((t) => [
+        t.id,
+        {
+          hours: ceilToQuarterHour(t.rawMinutes),
+          rate: sharedClientRates[t.id],
+          internalNote: "",
+          expanded: false,
+          status: "ready_to_draft" as InvoiceStatus,
+          adjustmentReason: "",
+        },
+      ])
+    )
+  );
+  function updateInvoiceState(id: string, update: Partial<InvoiceState>) {
+    setInvoiceStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
   }
 
   return (
@@ -1749,9 +1764,13 @@ export default function InvoicesPage() {
             setHighTouch={setHighTouch}
             sharedDescriptions={sharedDescriptions}
             setDescription={setDescription}
+            firmDefaultRate={firmDefaultRate}
+            sharedClientRates={sharedClientRates}
+            invoiceStates={invoiceStates}
+            updateInvoiceState={updateInvoiceState}
           />
         )}
-        {activeView === "billing-run" && <BillingRunDashboard />}
+        {activeView === "billing-run" && <BillingRunDashboard invoiceStates={invoiceStates} />}
         {activeView === "time-entries" && <AllTimeEntriesView />}
         {activeView === "client-rules" && (
           <ClientRulesView
@@ -1759,6 +1778,10 @@ export default function InvoicesPage() {
             setHighTouch={setHighTouch}
             sharedDescriptions={sharedDescriptions}
             setDescription={setDescription}
+            firmDefaultRate={firmDefaultRate}
+            setFirmDefaultRate={setFirmDefaultRate}
+            sharedClientRates={sharedClientRates}
+            setClientRate={setClientRate}
           />
         )}
         {activeView === "settings" && <SettingsView />}

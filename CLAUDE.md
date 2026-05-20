@@ -104,7 +104,7 @@ firms:
 
 See Section 6 of the briefing for the full validation sequence.
 
-## Current Code Status (as of 2026-05-19)
+## Current Code Status (as of 2026-05-20)
 
 ### What exists
 - **`apps/web/`** — Next.js 15 app (TypeScript, Tailwind v4, App Router, `lucide-react`)
@@ -118,11 +118,15 @@ All UI lives in this single file. All five nav views are fully implemented. Pers
 **Shared state (lifted to `InvoicesPage`):**
 - `sharedHighTouch: Record<string, boolean>` — high-touch flag per client, shared between Invoice Queue and Client Rules
 - `sharedDescriptions: Record<string, string>` — invoice description per client, shared between Invoice Queue and Client Rules
-- Changing either in Client Rules immediately reflects in the Invoice Queue expanded card, and vice versa
+- `firmDefaultRate: number` — firm-wide default hourly rate, shared between Client Rules and Invoice Queue (seeds initial card rate)
+- `sharedClientRates: Record<string, number>` — per-client hourly rate, shared between Client Rules and Invoice Queue (seeds initial card rate)
+- `invoiceStates: Record<string, InvoiceState>` — full invoice state per client (hours, rate, status, etc.), shared between Invoice Queue and Billing Run
+- Rates set in Client Rules seed Invoice Queue on mount; Invoice Queue still allows inline overrides after seeding
+- Billing Run stat cards and totals derive from live `invoiceStates` — reflect any manual hour adjustments made in Invoice Queue
 
 1. **Billing Run** (default on load):
    - Page header: "May 2026 Billing Run / April 2026 Time Entries" with "In Review" badge
-   - 4 summary cards: Clients Ready, Proposed Billing ($6,968.75), Rounded Hours (55.75), Time Saved
+   - 4 summary cards: Clients Ready, Proposed Billing (live from `invoiceStates`), Rounded Hours (live from `invoiceStates`), Time Saved
    - 4-step progress indicator (step 2 "Reviewed Time" is active)
    - Billing totals breakdown panel with +$62.64 rounding highlight
    - Review summary with time-saved comparison chips
@@ -160,7 +164,7 @@ All UI lives in this single file. All five nav views are fully implemented. Pers
    - **High-Touch Client Buffer** callout: explains the 15–45 min manual buffer workflow
 
 5. **Settings** — fully implemented:
-   - **Integrations & Data Sources** panel: QBO Time import source (with future API note), QuickBooks Online (green "Connected" badge), BillerGenie (green "Active" badge), BillerGenie plan + pricing
+   - **Integrations & Data Sources** panel: QBO Time import source (with future API note), QuickBooks Online (slate "Ready to Connect" badge — not green), BillerGenie (slate "Syncs via Premium Plan" badge — not green), BillerGenie plan + pricing
    - **Billing Behavior** panel: Auto-send Off (red pill), Require approval On (green pill), invoice date rule, due date rule, rounding method
    - **How This Fits Your Existing Tools** callout: pipeline chip row with "Billing Review Dashboard" highlighted in green, ArrowRight icons between chips
    - **About** panel: prototype attribution, DM Mono data summary line
