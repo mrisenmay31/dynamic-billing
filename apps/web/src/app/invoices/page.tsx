@@ -8,6 +8,10 @@ import {
   Settings2,
   Settings,
   ArrowRight,
+  Search,
+  X,
+  ChevronDown,
+  ArrowUpDown,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -39,6 +43,18 @@ interface InvoiceState {
   adjustmentReason: string;
 }
 
+interface FlatEntry {
+  client: string;
+  date: string;
+  employee: string;
+  productService: string;
+  description: string;
+  duration: string;
+  rate: number;
+  billable: string;
+  amount: number;
+}
+
 interface Toast {
   id: string;
   message: string;
@@ -66,6 +82,22 @@ function formatCurrency(amount: number): string {
 
 function formatHours(hours: number): string {
   return hours.toFixed(2);
+}
+
+function sumDurations(durations: string[]): string {
+  const totalMinutes = durations.reduce((sum, d) => {
+    const [h, m] = d.split(":").map(Number);
+    return sum + h * 60 + m;
+  }, 0);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}:${m.toString().padStart(2, "0")}`;
+}
+
+function durationToAmount(duration: string, rate: number): number {
+  const [h, m] = duration.split(":").map(Number);
+  const decimalHours = h + m / 60;
+  return Math.round(decimalHours * rate * 100) / 100;
 }
 
 /* ─── Data ───────────────────────────────────────────────────── */
@@ -189,6 +221,20 @@ const TEMPLATES: InvoiceTemplate[] = [
     ],
   },
 ];
+
+const ALL_ENTRIES: FlatEntry[] = TEMPLATES.flatMap((t) =>
+  t.entries.map((e) => ({
+    client: t.client,
+    date: `${e.date}/2026`,
+    employee: e.staff,
+    productService: "Hourly Accounting services",
+    description: e.note,
+    duration: e.duration,
+    rate: DEFAULT_RATE,
+    billable: "Yes",
+    amount: durationToAmount(e.duration, DEFAULT_RATE),
+  }))
+);
 
 /* ─── Nav config ─────────────────────────────────────────────── */
 const NAV_ITEMS: { view: NavView; label: string; Icon: React.ElementType }[] = [
@@ -977,6 +1023,244 @@ function InvoiceQueueView({
   );
 }
 
+/* ─── All Time Entries view ──────────────────────────────────── */
+function AllTimeEntriesView() {
+  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [billableFilter, setBillableFilter] = useState("");
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const uniqueEmployees = Array.from(new Set(ALL_ENTRIES.map((e) => e.employee))).sort();
+
+  const hasActiveFilters =
+    search !== "" || clientFilter !== "" || employeeFilter !== "" || billableFilter !== "" || !sortAsc;
+
+  const filtered = ALL_ENTRIES.filter((e) => {
+    if (search && !e.description.toLowerCase().includes(search.toLowerCase())) return false;
+    if (clientFilter && e.client !== clientFilter) return false;
+    if (employeeFilter && e.employee !== employeeFilter) return false;
+    if (billableFilter === "Billable" && e.billable !== "Yes") return false;
+    if (billableFilter === "Non-Billable" && e.billable === "Yes") return false;
+    return true;
+  }).sort((a, b) => {
+    const da = new Date(a.date).getTime();
+    const db = new Date(b.date).getTime();
+    return sortAsc ? da - db : db - da;
+  });
+
+  const filteredDuration = sumDurations(filtered.map((e) => e.duration));
+  const filteredAmount = filtered.reduce((sum, e) => sum + e.amount, 0);
+  const filteredClientCount = new Set(filtered.map((e) => e.client)).size;
+
+  function clearFilters() {
+    setSearch("");
+    setClientFilter("");
+    setEmployeeFilter("");
+    setBillableFilter("");
+    setSortAsc(true);
+  }
+
+  const selectCls =
+    "appearance-none text-sm border border-gray-200 rounded-lg pl-3 pr-7 py-2 text-gray-700 bg-white focus:outline-none focus:border-[#40916C] cursor-pointer";
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {/* Page header */}
+      <div className="px-8 pt-6 pb-4">
+        <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
+        <p className="text-sm text-gray-500 mt-0.5">April 2026 Import — QuickBooks Time</p>
+
+        {/* Stats bar */}
+        <div className="flex items-center gap-1 mt-3 flex-wrap">
+          {[
+            { label: "Total Entries", value: filtered.length.toString() },
+            { label: "Total Raw Time", value: filteredDuration },
+            { label: "Total Raw Amount", value: formatCurrency(filteredAmount) },
+            { label: "Clients", value: filteredClientCount.toString() },
+          ].map(({ label, value }, i, arr) => (
+            <span key={label} className="flex items-center gap-1">
+              <span className="flex items-baseline gap-1.5 px-2">
+                <span className="text-xs text-gray-400">{label}</span>
+                <span className="font-mono text-sm font-semibold text-gray-700">{value}</span>
+              </span>
+              {i < arr.length - 1 && <span className="text-gray-300 text-xs">·</span>}
+            </span>
+          ))}
+        </div>
+
+        {/* Contextual note */}
+        <div
+          className="mt-4 pl-4 py-2.5 pr-3 rounded-r-lg"
+          style={{ borderLeft: "3px solid #2D6A4F", backgroundColor: "#f9fafb" }}
+        >
+          <p className="text-xs font-medium text-gray-700">
+            These are your raw QBO Time entries for April 2026.
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+            Invoice totals in the queue are calculated directly from this data —
+            grouped by client, rounded to the next quarter hour.
+          </p>
+        </div>
+      </div>
+
+      {/* Sticky filter bar */}
+      <div
+        className="sticky top-0 z-20 bg-white border-b border-gray-200 px-8 py-3"
+        style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-52">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by staff note or description..."
+              className="w-full text-sm border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-gray-900 focus:outline-none focus:border-[#40916C] placeholder-gray-300"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Client filter */}
+          <div className="relative shrink-0">
+            <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className={selectCls}>
+              <option value="">All Clients</option>
+              <option value="Baine & Company">Baine &amp; Company</option>
+              <option value="Knox Physical Therapy">Knox Physical Therapy</option>
+              <option value="Knoxville Title Agency LLC">Knoxville Title Agency LLC</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* Employee filter */}
+          <div className="relative shrink-0">
+            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className={selectCls}>
+              <option value="">All Employees</option>
+              {uniqueEmployees.map((emp) => (
+                <option key={emp} value={emp}>{emp}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* Billable filter */}
+          <div className="relative shrink-0">
+            <select value={billableFilter} onChange={(e) => setBillableFilter(e.target.value)} className={selectCls}>
+              <option value="">All</option>
+              <option value="Billable">Billable</option>
+              <option value="Non-Billable">Non-Billable</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+
+          {/* Sort toggle */}
+          <button
+            onClick={() => setSortAsc((prev) => !prev)}
+            className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 hover:border-gray-300 transition-colors shrink-0 whitespace-nowrap"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+            Date: {sortAsc ? "Oldest First" : "Newest First"}
+          </button>
+
+          {/* Clear filters */}
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors shrink-0 whitespace-nowrap underline underline-offset-2"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="px-8 pb-10 pt-4">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Search className="w-8 h-8 text-gray-300 mb-3" />
+            <h3 className="text-base font-medium text-gray-600">No entries match your filters</h3>
+            <p className="text-sm text-gray-400 mt-1">Try adjusting your search or clearing the filters</p>
+            <button
+              onClick={clearFilters}
+              className="mt-4 text-sm font-medium px-4 py-2 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-300 transition-colors"
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Date</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-44">Client</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">Employee</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-44">Product / Service</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff Note</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Duration</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-14">Rate</th>
+                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Billable</th>
+                <th className="py-3 px-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((entry, i) => (
+                <tr
+                  key={i}
+                  className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}
+                >
+                  <td className="py-2.5 px-3 font-mono text-xs text-gray-500 whitespace-nowrap">{entry.date}</td>
+                  <td className="py-2.5 px-3 text-xs text-gray-700">{entry.client}</td>
+                  <td className="py-2.5 px-3 text-xs text-gray-700">{entry.employee}</td>
+                  <td className="py-2.5 px-3 text-xs text-gray-500">{entry.productService}</td>
+                  <td className="py-2.5 px-3 text-xs text-gray-700 leading-relaxed">{entry.description}</td>
+                  <td className="py-2.5 px-3 font-mono text-xs text-gray-500 whitespace-nowrap">{entry.duration}</td>
+                  <td className="py-2.5 px-3 font-mono text-xs text-gray-500">${entry.rate}</td>
+                  <td className="py-2.5 px-3">
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
+                      style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}
+                    >
+                      {entry.billable}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700">
+                    {formatCurrency(entry.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ backgroundColor: "#f3f4f6" }} className="border-t-2 border-gray-200">
+                <td className="py-3 px-3" />
+                <td className="py-3 px-3" />
+                <td className="py-3 px-3 text-xs font-semibold text-gray-700">{filtered.length} entries</td>
+                <td className="py-3 px-3" />
+                <td className="py-3 px-3" />
+                <td className="py-3 px-3 font-mono text-xs font-semibold text-gray-700">{filteredDuration}</td>
+                <td className="py-3 px-3" />
+                <td className="py-3 px-3" />
+                <td className="py-3 px-3 text-right font-mono text-xs font-semibold text-gray-700">
+                  {formatCurrency(filteredAmount)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Client Rules view ──────────────────────────────────────── */
 function ClientRulesView({
   sharedHighTouch,
@@ -1465,7 +1749,7 @@ export default function InvoicesPage() {
           />
         )}
         {activeView === "billing-run" && <BillingRunDashboard />}
-        {activeView === "time-entries" && <PlaceholderView title="All Time Entries" />}
+        {activeView === "time-entries" && <AllTimeEntriesView />}
         {activeView === "client-rules" && (
           <ClientRulesView
             sharedHighTouch={sharedHighTouch}
