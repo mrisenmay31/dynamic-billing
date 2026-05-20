@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  FileText,
+  Clock,
+  Settings2,
+  Settings,
+} from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
 interface TimeEntry {
@@ -33,6 +40,8 @@ interface Toast {
   id: string;
   message: string;
 }
+
+type NavView = "billing-run" | "invoice-queue" | "time-entries" | "client-rules" | "settings";
 
 /* ─── Utilities ──────────────────────────────────────────────── */
 function ceilToQuarterHour(totalMinutes: number): number {
@@ -152,6 +161,15 @@ const TEMPLATES: InvoiceTemplate[] = [
   },
 ];
 
+/* ─── Nav config ─────────────────────────────────────────────── */
+const NAV_ITEMS: { view: NavView; label: string; Icon: React.ElementType }[] = [
+  { view: "billing-run", label: "Billing Run", Icon: LayoutDashboard },
+  { view: "invoice-queue", label: "Invoice Queue", Icon: FileText },
+  { view: "time-entries", label: "All Time Entries", Icon: Clock },
+  { view: "client-rules", label: "Client Rules", Icon: Settings2 },
+  { view: "settings", label: "Settings", Icon: Settings },
+];
+
 /* ─── Sub-components ─────────────────────────────────────────── */
 function StatusBadge({ sent }: { sent: boolean }) {
   if (sent) {
@@ -204,8 +222,19 @@ function StatCard({
   );
 }
 
-/* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesPage() {
+function PlaceholderView({ title }: { title: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-0">
+      <div className="text-center px-6">
+        <h2 className="font-display text-2xl text-gray-800 mb-2">{title}</h2>
+        <p className="text-sm text-gray-400">This section is coming soon.</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Invoice Queue view ─────────────────────────────────────── */
+function InvoiceQueueView() {
   const [states, setStates] = useState<Record<string, InvoiceState>>(
     Object.fromEntries(
       TEMPLATES.map((t) => [
@@ -224,7 +253,6 @@ export default function InvoicesPage() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [generating, setGenerating] = useState(false);
 
-  /* ─── Derived values ─── */
   const allTotalHours = TEMPLATES.reduce((sum, t) => sum + states[t.id].hours, 0);
   const allTotalBilled = TEMPLATES.reduce(
     (sum, t) => sum + states[t.id].hours * states[t.id].rate,
@@ -236,7 +264,6 @@ export default function InvoicesPage() {
     0
   );
 
-  /* ─── Handlers ─── */
   function addToast(message: string) {
     const id = Math.random().toString(36).slice(2);
     setToasts((prev) => [...prev, { id, message }]);
@@ -275,7 +302,7 @@ export default function InvoicesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Toast notifications */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
@@ -295,10 +322,10 @@ export default function InvoicesPage() {
 
       {/* Header */}
       <header style={{ backgroundColor: "#2D6A4F" }}>
-        <div className="max-w-4xl mx-auto px-6 py-5 flex items-center justify-between">
+        <div className="px-8 py-5 flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl text-white leading-tight">
-              P&L Business Services
+              Invoice Queue
             </h1>
             <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>
               April 2026 · Billing Period
@@ -308,10 +335,7 @@ export default function InvoicesPage() {
             onClick={handleGenerate}
             disabled={generating}
             className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-colors disabled:opacity-60"
-            style={{
-              borderColor: "rgba(216,243,220,0.5)",
-              color: "white",
-            }}
+            style={{ borderColor: "rgba(216,243,220,0.5)", color: "white" }}
             onMouseEnter={(e) => {
               if (!generating) {
                 e.currentTarget.style.backgroundColor = "white";
@@ -343,343 +367,242 @@ export default function InvoicesPage() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="max-w-4xl mx-auto px-6 py-6 space-y-4">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <StatCard
-            label="Drafts Ready"
-            value={unsentTemplates.length.toString()}
-          />
-          <StatCard
-            label="Total Hours"
-            value={`${formatHours(allTotalHours)} hrs`}
-            mono
-          />
-          <StatCard
-            label="Total Billed"
-            value={formatCurrency(allTotalBilled)}
-            mono
-          />
-        </div>
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto pb-28">
+        <div className="px-8 py-6 space-y-4 max-w-4xl">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4">
+            <StatCard label="Drafts Ready" value={unsentTemplates.length.toString()} />
+            <StatCard label="Total Hours" value={`${formatHours(allTotalHours)} hrs`} mono />
+            <StatCard label="Total Billed" value={formatCurrency(allTotalBilled)} mono />
+          </div>
 
-        {/* Invoice cards */}
-        {TEMPLATES.map((template) => {
-          const state = states[template.id];
-          const amount = state.hours * state.rate;
-          const defaultRounded = ceilToQuarterHour(template.rawMinutes);
+          {/* Invoice cards */}
+          {TEMPLATES.map((template) => {
+            const state = states[template.id];
+            const amount = state.hours * state.rate;
+            const defaultRounded = ceilToQuarterHour(template.rawMinutes);
 
-          return (
-            <div
-              key={template.id}
-              className={`bg-white rounded-xl border transition-all duration-200 ${
-                state.sent
-                  ? "border-gray-100 opacity-60"
-                  : "border-gray-200 shadow-sm"
-              }`}
-            >
-              {/* Card header — always visible, click to expand */}
-              <button
-                onClick={() =>
-                  !state.sent &&
-                  updateState(template.id, { expanded: !state.expanded })
-                }
-                className={`w-full text-left px-6 py-5 ${state.sent ? "cursor-default" : "cursor-pointer"}`}
+            return (
+              <div
+                key={template.id}
+                className={`bg-white rounded-xl border transition-all duration-200 ${
+                  state.sent ? "border-gray-100 opacity-60" : "border-gray-200 shadow-sm"
+                }`}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h2 className="font-display text-xl text-gray-900 leading-snug">
-                      {template.client}
-                    </h2>
-                    <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1">
-                      <span className="font-mono text-xs text-gray-400">
-                        {template.invoiceNum}
-                      </span>
-                      <span className="text-gray-200 text-xs">·</span>
-                      <span className="text-xs text-gray-400">April 2026</span>
-                      {template.billTo && (
-                        <>
-                          <span className="text-gray-200 text-xs">·</span>
-                          <span className="text-xs text-gray-400">
-                            Bill to: {template.billTo}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <div className="font-mono text-xl font-medium text-gray-900">
-                        {formatCurrency(amount)}
-                      </div>
-                      <div className="font-mono text-xs text-gray-400 mt-0.5">
-                        {formatHours(state.hours)} hrs @ ${state.rate}/hr
+                <button
+                  onClick={() =>
+                    !state.sent && updateState(template.id, { expanded: !state.expanded })
+                  }
+                  className={`w-full text-left px-6 py-5 ${state.sent ? "cursor-default" : "cursor-pointer"}`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h2 className="font-display text-xl text-gray-900 leading-snug">
+                        {template.client}
+                      </h2>
+                      <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1">
+                        <span className="font-mono text-xs text-gray-400">{template.invoiceNum}</span>
+                        <span className="text-gray-200 text-xs">·</span>
+                        <span className="text-xs text-gray-400">April 2026</span>
+                        {template.billTo && (
+                          <>
+                            <span className="text-gray-200 text-xs">·</span>
+                            <span className="text-xs text-gray-400">Bill to: {template.billTo}</span>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <StatusBadge sent={state.sent} />
-                    {!state.sent && <ChevronIcon expanded={state.expanded} />}
-                  </div>
-                </div>
-              </button>
-
-              {/* Expanded content */}
-              {state.expanded && !state.sent && (
-                <div className="px-6 pb-6 border-t border-gray-100">
-                  <div className="pt-5 space-y-5">
-                    {/* Time entries */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Time Entries
-                        </h3>
-                        <span className="text-xs text-gray-400 italic">
-                          Not shown on invoice
-                        </span>
-                      </div>
-
-                      <div
-                        className="max-h-52 overflow-y-auto rounded-lg border border-gray-100"
-                        style={{ scrollbarWidth: "thin" }}
-                      >
-                        <table className="w-full text-xs">
-                          <thead className="bg-gray-50 sticky top-0 z-10">
-                            <tr>
-                              <th className="text-left px-3 py-2.5 font-medium text-gray-500 w-14">
-                                Date
-                              </th>
-                              <th className="text-left px-3 py-2.5 font-medium text-gray-500 w-40">
-                                Staff
-                              </th>
-                              <th className="text-left px-3 py-2.5 font-medium text-gray-500">
-                                Notes
-                              </th>
-                              <th className="text-right px-3 py-2.5 font-medium text-gray-500 w-12">
-                                Time
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {template.entries.map((entry, i) => (
-                              <tr
-                                key={i}
-                                className="hover:bg-gray-50/50 transition-colors"
-                              >
-                                <td className="px-3 py-2 font-mono text-gray-500">
-                                  {entry.date}
-                                </td>
-                                <td className="px-3 py-2 text-gray-700">
-                                  {entry.staff}
-                                </td>
-                                <td className="px-3 py-2 text-gray-500">
-                                  {entry.note}
-                                </td>
-                                <td className="px-3 py-2 text-right font-mono text-gray-500">
-                                  {entry.duration}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Rounding summary */}
-                      <div className="mt-2.5 flex items-center gap-1.5 text-sm">
-                        <span className="font-mono text-gray-600">
-                          {formatMinutes(template.rawMinutes)}
-                        </span>
-                        <span className="text-gray-400">raw</span>
-                        <svg className="w-3 h-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                        <span className="font-mono font-medium" style={{ color: "#40916C" }}>
-                          {formatHours(defaultRounded)} hrs
-                        </span>
-                        <span className="text-gray-400">billed</span>
-                        <span className="text-gray-300 text-xs ml-0.5">
-                          (rounded up to next 0.25)
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Invoice details */}
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Invoice Details
-                      </h3>
-
-                      {/* Description */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                          Client-facing description
-                        </label>
-                        <textarea
-                          value={state.description}
-                          onChange={(e) =>
-                            updateState(template.id, {
-                              description: e.target.value,
-                            })
-                          }
-                          rows={2}
-                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 resize-none focus:outline-none transition-shadow"
-                          onFocus={(e) => {
-                            e.currentTarget.style.borderColor = "#40916C";
-                            e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
-                          }}
-                          onBlur={(e) => {
-                            e.currentTarget.style.borderColor = "#e5e7eb";
-                            e.currentTarget.style.boxShadow = "none";
-                          }}
-                        />
-                      </div>
-
-                      {/* Hours + Rate */}
-                      <div className="flex gap-3">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                            Hours billed
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              value={state.hours}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val >= 0) {
-                                  updateState(template.id, { hours: val });
-                                }
-                              }}
-                              step={0.25}
-                              min={0}
-                              className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-2.5 pr-10 text-gray-900 focus:outline-none transition-shadow"
-                              onFocus={(e) => {
-                                e.currentTarget.style.borderColor = "#40916C";
-                                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
-                              }}
-                              onBlur={(e) => {
-                                e.currentTarget.style.borderColor = "#e5e7eb";
-                                e.currentTarget.style.boxShadow = "none";
-                              }}
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                              hrs
-                            </span>
-                          </div>
-                        </div>
-                        <div className="w-36">
-                          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                            Rate
-                          </label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                              $
-                            </span>
-                            <input
-                              type="number"
-                              value={state.rate}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (!isNaN(val) && val >= 0) {
-                                  updateState(template.id, { rate: val });
-                                }
-                              }}
-                              step={1}
-                              min={0}
-                              className="w-full text-sm font-mono border border-gray-200 rounded-lg pl-6 pr-3 py-2.5 text-gray-900 focus:outline-none transition-shadow"
-                              onFocus={(e) => {
-                                e.currentTarget.style.borderColor = "#40916C";
-                                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
-                              }}
-                              onBlur={(e) => {
-                                e.currentTarget.style.borderColor = "#e5e7eb";
-                                e.currentTarget.style.boxShadow = "none";
-                              }}
-                            />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">
-                              /hr
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Internal note */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                          Internal note{" "}
-                          <span className="font-normal text-gray-400">
-                            (not shown on invoice)
-                          </span>
-                        </label>
-                        <input
-                          type="text"
-                          value={state.internalNote}
-                          onChange={(e) =>
-                            updateState(template.id, {
-                              internalNote: e.target.value,
-                            })
-                          }
-                          placeholder="Add a note for your records…"
-                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 focus:outline-none transition-shadow placeholder-gray-300"
-                          onFocus={(e) => {
-                            e.currentTarget.style.borderColor = "#40916C";
-                            e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
-                          }}
-                          onBlur={(e) => {
-                            e.currentTarget.style.borderColor = "#e5e7eb";
-                            e.currentTarget.style.boxShadow = "none";
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Card footer */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-sm text-gray-500">
-                          Invoice total
-                        </span>
-                        <span className="font-mono text-2xl font-medium text-gray-900">
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right">
+                        <div className="font-mono text-xl font-medium text-gray-900">
                           {formatCurrency(amount)}
-                        </span>
+                        </div>
+                        <div className="font-mono text-xs text-gray-400 mt-0.5">
+                          {formatHours(state.hours)} hrs @ ${state.rate}/hr
+                        </div>
                       </div>
-                      <button
-                        onClick={() => approveInvoice(template.id)}
-                        className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors"
-                        style={{ backgroundColor: "#2D6A4F" }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = "#40916C";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = "#2D6A4F";
-                        }}
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Approve &amp; send to QBO
-                      </button>
+                      <StatusBadge sent={state.sent} />
+                      {!state.sent && <ChevronIcon expanded={state.expanded} />}
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </main>
+                </button>
+
+                {state.expanded && !state.sent && (
+                  <div className="px-6 pb-6 border-t border-gray-100">
+                    <div className="pt-5 space-y-5">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider">Time Entries</h3>
+                          <span className="text-xs text-gray-400 italic">Not shown on invoice</span>
+                        </div>
+                        <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-100" style={{ scrollbarWidth: "thin" }}>
+                          <table className="w-full text-xs">
+                            <thead className="bg-gray-50 sticky top-0 z-10">
+                              <tr>
+                                <th className="text-left px-3 py-2.5 font-medium text-gray-500 w-14">Date</th>
+                                <th className="text-left px-3 py-2.5 font-medium text-gray-500 w-40">Staff</th>
+                                <th className="text-left px-3 py-2.5 font-medium text-gray-500">Notes</th>
+                                <th className="text-right px-3 py-2.5 font-medium text-gray-500 w-12">Time</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {template.entries.map((entry, i) => (
+                                <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+                                  <td className="px-3 py-2 font-mono text-gray-500">{entry.date}</td>
+                                  <td className="px-3 py-2 text-gray-700">{entry.staff}</td>
+                                  <td className="px-3 py-2 text-gray-500">{entry.note}</td>
+                                  <td className="px-3 py-2 text-right font-mono text-gray-500">{entry.duration}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="mt-2.5 flex items-center gap-1.5 text-sm">
+                          <span className="font-mono text-gray-600">{formatMinutes(template.rawMinutes)}</span>
+                          <span className="text-gray-400">raw</span>
+                          <svg className="w-3 h-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                          <span className="font-mono font-medium" style={{ color: "#40916C" }}>
+                            {formatHours(defaultRounded)} hrs
+                          </span>
+                          <span className="text-gray-400">billed</span>
+                          <span className="text-gray-300 text-xs ml-0.5">(rounded up to next 0.25)</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice Details</h3>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">Client-facing description</label>
+                          <textarea
+                            value={state.description}
+                            onChange={(e) => updateState(template.id, { description: e.target.value })}
+                            rows={2}
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 resize-none focus:outline-none transition-shadow"
+                            onFocus={(e) => {
+                              e.currentTarget.style.borderColor = "#40916C";
+                              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
+                            }}
+                            onBlur={(e) => {
+                              e.currentTarget.style.borderColor = "#e5e7eb";
+                              e.currentTarget.style.boxShadow = "none";
+                            }}
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="block text-xs font-medium text-gray-600 mb-1.5">Hours billed</label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                value={state.hours}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  if (!isNaN(val) && val >= 0) updateState(template.id, { hours: val });
+                                }}
+                                step={0.25}
+                                min={0}
+                                className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-2.5 pr-10 text-gray-900 focus:outline-none transition-shadow"
+                                onFocus={(e) => {
+                                  e.currentTarget.style.borderColor = "#40916C";
+                                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
+                                }}
+                                onBlur={(e) => {
+                                  e.currentTarget.style.borderColor = "#e5e7eb";
+                                  e.currentTarget.style.boxShadow = "none";
+                                }}
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">hrs</span>
+                            </div>
+                          </div>
+                          <div className="w-36">
+                            <label className="block text-xs font-medium text-gray-600 mb-1.5">Rate</label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
+                              <input
+                                type="number"
+                                value={state.rate}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  if (!isNaN(val) && val >= 0) updateState(template.id, { rate: val });
+                                }}
+                                step={1}
+                                min={0}
+                                className="w-full text-sm font-mono border border-gray-200 rounded-lg pl-6 pr-3 py-2.5 text-gray-900 focus:outline-none transition-shadow"
+                                onFocus={(e) => {
+                                  e.currentTarget.style.borderColor = "#40916C";
+                                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
+                                }}
+                                onBlur={(e) => {
+                                  e.currentTarget.style.borderColor = "#e5e7eb";
+                                  e.currentTarget.style.boxShadow = "none";
+                                }}
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">/hr</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                            Internal note <span className="font-normal text-gray-400">(not shown on invoice)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={state.internalNote}
+                            onChange={(e) => updateState(template.id, { internalNote: e.target.value })}
+                            placeholder="Add a note for your records…"
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 focus:outline-none transition-shadow placeholder-gray-300"
+                            onFocus={(e) => {
+                              e.currentTarget.style.borderColor = "#40916C";
+                              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(45,106,79,0.1)";
+                            }}
+                            onBlur={(e) => {
+                              e.currentTarget.style.borderColor = "#e5e7eb";
+                              e.currentTarget.style.boxShadow = "none";
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm text-gray-500">Invoice total</span>
+                          <span className="font-mono text-2xl font-medium text-gray-900">{formatCurrency(amount)}</span>
+                        </div>
+                        <button
+                          onClick={() => approveInvoice(template.id)}
+                          className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors"
+                          style={{ backgroundColor: "#2D6A4F" }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#40916C"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Approve &amp; send to QBO
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Bottom action bar */}
-      <div className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 shadow-lg z-40">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div className="border-t border-gray-200 bg-white shadow-lg z-40">
+        <div className="px-8 py-4 flex items-center justify-between max-w-4xl">
           <div className="flex items-baseline gap-2">
             {unsentTemplates.length > 0 ? (
               <>
                 <span className="text-sm text-gray-500">
-                  {unsentTemplates.length} unsent draft
-                  {unsentTemplates.length !== 1 ? "s" : ""}
+                  {unsentTemplates.length} unsent draft{unsentTemplates.length !== 1 ? "s" : ""}
                 </span>
-                <span className="font-mono text-xl font-medium text-gray-900">
-                  {formatCurrency(unsentTotal)}
-                </span>
+                <span className="font-mono text-xl font-medium text-gray-900">{formatCurrency(unsentTotal)}</span>
                 <span className="text-sm text-gray-400">remaining</span>
               </>
             ) : (
@@ -692,20 +615,9 @@ export default function InvoicesPage() {
             onClick={approveAll}
             disabled={unsentTemplates.length === 0}
             className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              backgroundColor:
-                unsentTemplates.length > 0 ? "#2D6A4F" : "#9ca3af",
-            }}
-            onMouseEnter={(e) => {
-              if (unsentTemplates.length > 0) {
-                e.currentTarget.style.backgroundColor = "#40916C";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (unsentTemplates.length > 0) {
-                e.currentTarget.style.backgroundColor = "#2D6A4F";
-              }
-            }}
+            style={{ backgroundColor: unsentTemplates.length > 0 ? "#2D6A4F" : "#9ca3af" }}
+            onMouseEnter={(e) => { if (unsentTemplates.length > 0) e.currentTarget.style.backgroundColor = "#40916C"; }}
+            onMouseLeave={(e) => { if (unsentTemplates.length > 0) e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -713,6 +625,62 @@ export default function InvoicesPage() {
             Approve &amp; send all
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main page component ────────────────────────────────────── */
+export default function InvoicesPage() {
+  const [activeView, setActiveView] = useState<NavView>("billing-run");
+
+  return (
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Sidebar */}
+      <aside
+        className="flex flex-col shrink-0 w-56"
+        style={{ backgroundColor: "#2D6A4F" }}
+      >
+        {/* Firm name */}
+        <div className="px-5 py-5 border-b" style={{ borderColor: "rgba(216,243,220,0.2)" }}>
+          <p className="font-display text-white text-base leading-snug">P&L Business Services</p>
+        </div>
+
+        {/* Nav items */}
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
+          {NAV_ITEMS.map(({ view, label, Icon }) => {
+            const active = activeView === view;
+            return (
+              <button
+                key={view}
+                onClick={() => setActiveView(view)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left transition-colors"
+                style={{
+                  backgroundColor: active ? "rgba(255,255,255,0.15)" : "transparent",
+                  color: active ? "white" : "#D8F3DC",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.08)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <Icon size={16} strokeWidth={active ? 2.5 : 2} />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {activeView === "invoice-queue" && <InvoiceQueueView />}
+        {activeView === "billing-run" && <PlaceholderView title="Billing Run" />}
+        {activeView === "time-entries" && <PlaceholderView title="All Time Entries" />}
+        {activeView === "client-rules" && <PlaceholderView title="Client Rules" />}
+        {activeView === "settings" && <PlaceholderView title="Settings" />}
       </div>
     </div>
   );
