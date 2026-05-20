@@ -7,10 +7,7 @@ import {
   Clock,
   Settings2,
   Settings,
-  Search,
-  X,
-  ChevronDown,
-  ArrowUpDown,
+  ArrowRight,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -36,24 +33,10 @@ interface InvoiceTemplate {
 interface InvoiceState {
   hours: number;
   rate: number;
-  description: string;
   internalNote: string;
   expanded: boolean;
   status: InvoiceStatus;
-  isHighTouch: boolean;
   adjustmentReason: string;
-}
-
-interface FlatEntry {
-  client: string;
-  date: string;
-  employee: string;
-  productService: string;
-  description: string;
-  duration: string;
-  rate: number;
-  billable: string;
-  amount: number;
 }
 
 interface Toast {
@@ -66,12 +49,6 @@ type NavView = "billing-run" | "invoice-queue" | "time-entries" | "client-rules"
 /* ─── Utilities ──────────────────────────────────────────────── */
 function ceilToQuarterHour(totalMinutes: number): number {
   return Math.ceil(totalMinutes / 15) * 0.25;
-}
-
-function formatMinutes(totalMinutes: number): string {
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 function formatHHMM(totalMinutes: number): string {
@@ -89,22 +66,6 @@ function formatCurrency(amount: number): string {
 
 function formatHours(hours: number): string {
   return hours.toFixed(2);
-}
-
-function sumDurations(durations: string[]): string {
-  const totalMinutes = durations.reduce((sum, d) => {
-    const [h, m] = d.split(":").map(Number);
-    return sum + h * 60 + m;
-  }, 0);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}:${m.toString().padStart(2, "0")}`;
-}
-
-function durationToAmount(duration: string, rate: number): number {
-  const [h, m] = duration.split(":").map(Number);
-  const decimalHours = h + m / 60;
-  return Math.round(decimalHours * rate * 100) / 100;
 }
 
 /* ─── Data ───────────────────────────────────────────────────── */
@@ -229,20 +190,6 @@ const TEMPLATES: InvoiceTemplate[] = [
   },
 ];
 
-const ALL_ENTRIES: FlatEntry[] = TEMPLATES.flatMap((t) =>
-  t.entries.map((e) => ({
-    client: t.client,
-    date: `${e.date}/2026`,
-    employee: e.staff,
-    productService: "Hourly Accounting services",
-    description: e.note,
-    duration: e.duration,
-    rate: DEFAULT_RATE,
-    billable: "Yes",
-    amount: durationToAmount(e.duration, DEFAULT_RATE),
-  }))
-);
-
 /* ─── Nav config ─────────────────────────────────────────────── */
 const NAV_ITEMS: { view: NavView; label: string; Icon: React.ElementType }[] = [
   { view: "billing-run", label: "Billing Run", Icon: LayoutDashboard },
@@ -260,6 +207,30 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; bg: string; color: s
 };
 
 /* ─── Sub-components ─────────────────────────────────────────── */
+function ToggleSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (val: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
+      style={{ backgroundColor: checked ? "#2D6A4F" : "#e5e7eb" }}
+    >
+      <span
+        className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+        style={{ transform: checked ? "translateX(17px)" : "translateX(2px)" }}
+      />
+    </button>
+  );
+}
+
 function StatusDropdown({
   status,
   onChange,
@@ -335,18 +306,6 @@ function inputFocusHandlers() {
   };
 }
 
-/* ─── Placeholder ────────────────────────────────────────────── */
-function PlaceholderView({ title }: { title: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center min-h-0">
-      <div className="text-center px-6">
-        <h2 className="font-display text-2xl text-gray-800 mb-2">{title}</h2>
-        <p className="text-sm text-gray-400">This section is coming soon.</p>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Billing Run Dashboard ──────────────────────────────────── */
 function BillingRunDashboard() {
   const steps = [
@@ -364,7 +323,7 @@ function BillingRunDashboard() {
             <div>
               <h1 className="font-display text-2xl text-gray-900 leading-tight">May 2026 Billing Run</h1>
               <p className="text-sm mt-0.5 text-gray-500">April 2026 Time Entries</p>
-              <p className="text-xs mt-1 text-gray-400">April's time is billed in May — this is standard practice.</p>
+              <p className="text-xs mt-1 text-gray-400">April&apos;s time is billed in May — this is standard practice.</p>
             </div>
             <span className="mt-1 shrink-0 inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "#FFF3E0", color: "#C2410C" }}>
               In Review
@@ -471,7 +430,17 @@ function BillingRunDashboard() {
 }
 
 /* ─── Invoice Queue view ─────────────────────────────────────── */
-function InvoiceQueueView() {
+function InvoiceQueueView({
+  sharedHighTouch,
+  setHighTouch,
+  sharedDescriptions,
+  setDescription,
+}: {
+  sharedHighTouch: Record<string, boolean>;
+  setHighTouch: (id: string, val: boolean) => void;
+  sharedDescriptions: Record<string, string>;
+  setDescription: (id: string, val: string) => void;
+}) {
   const [states, setStates] = useState<Record<string, InvoiceState>>(
     Object.fromEntries(
       TEMPLATES.map((t) => [
@@ -479,11 +448,9 @@ function InvoiceQueueView() {
         {
           hours: ceilToQuarterHour(t.rawMinutes),
           rate: DEFAULT_RATE,
-          description: t.defaultDescription,
           internalNote: "",
           expanded: false,
           status: "ready_to_draft" as InvoiceStatus,
-          isHighTouch: false,
           adjustmentReason: "",
         },
       ])
@@ -613,6 +580,8 @@ function InvoiceQueueView() {
             const finalQty = state.hours;
             const amount = finalQty * state.rate;
             const rawAmount = (template.rawMinutes / 60) * DEFAULT_RATE;
+            const isHighTouch = sharedHighTouch[template.id];
+            const description = sharedDescriptions[template.id];
 
             return (
               <div
@@ -663,10 +632,10 @@ function InvoiceQueueView() {
                         <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">How this invoice was calculated</h3>
                         <div className="space-y-0">
                           {[
-                            { label: "Raw QBO Time", value: formatHHMM(template.rawMinutes), static: true },
-                            { label: "Decimal hours", value: `${(template.rawMinutes / 60).toFixed(2)} hrs`, static: true },
-                            { label: "Rounded to next 0.25 hr", value: `${formatHours(roundedHours)} hrs`, static: true },
-                            { label: "Rate", value: `$${state.rate.toFixed(2)}`, static: true },
+                            { label: "Raw QBO Time", value: formatHHMM(template.rawMinutes) },
+                            { label: "Decimal hours", value: `${(template.rawMinutes / 60).toFixed(2)} hrs` },
+                            { label: "Rounded to next 0.25 hr", value: `${formatHours(roundedHours)} hrs` },
+                            { label: "Rate", value: `$${state.rate.toFixed(2)}` },
                           ].map(({ label, value }) => (
                             <div key={label} className="flex items-center justify-between py-1.5 border-b border-green-100">
                               <span className="text-xs text-gray-500">{label}</span>
@@ -695,10 +664,9 @@ function InvoiceQueueView() {
                         <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Client-Facing Invoice Preview</h3>
                         <p className="text-xs text-gray-400 italic mb-3">This is what your client sees. Individual time entries and staff notes are not included.</p>
                         <div className="rounded-lg border border-gray-200 shadow-sm bg-white overflow-hidden">
-                          {/* Preview header */}
                           <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-start justify-between">
                             <div>
-                              <p className="text-sm font-semibold text-gray-900">P&L Business Services, LLC</p>
+                              <p className="text-sm font-semibold text-gray-900">P&amp;L Business Services, LLC</p>
                               <div className="mt-2">
                                 <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Bill to</p>
                                 {template.billTo ? (
@@ -720,7 +688,6 @@ function InvoiceQueueView() {
                               </div>
                             </div>
                           </div>
-                          {/* Line item table */}
                           <table className="w-full text-xs">
                             <thead className="bg-gray-50">
                               <tr>
@@ -734,14 +701,13 @@ function InvoiceQueueView() {
                             <tbody>
                               <tr className="border-t border-gray-100">
                                 <td className="px-4 py-3 text-gray-700">Hourly Accounting services</td>
-                                <td className="px-4 py-3 text-gray-600 italic">{state.description}</td>
+                                <td className="px-4 py-3 text-gray-600 italic">{description}</td>
                                 <td className="px-4 py-3 text-right font-mono text-gray-700">{formatHours(finalQty)}</td>
                                 <td className="px-4 py-3 text-right font-mono text-gray-700">${state.rate.toFixed(2)}</td>
                                 <td className="px-4 py-3 text-right font-mono text-gray-800 font-medium">{formatCurrency(amount)}</td>
                               </tr>
                             </tbody>
                           </table>
-                          {/* Preview footer */}
                           <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
                             <div className="text-right">
                               <span className="text-xs text-gray-500 mr-4">Total</span>
@@ -780,7 +746,6 @@ function InvoiceQueueView() {
                               </tbody>
                             </table>
                           </div>
-                          {/* Totals row */}
                           <div className="bg-gray-50 border-t border-gray-200 px-3 py-2.5 flex items-center justify-between">
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                               <span><span className="font-medium text-gray-700">{template.entries.length}</span> entries</span>
@@ -798,23 +763,14 @@ function InvoiceQueueView() {
                         {/* High-touch toggle */}
                         <div>
                           <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={state.isHighTouch}
-                              onClick={() => updateState(template.id, { isHighTouch: !state.isHighTouch })}
-                              className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
-                              style={{ backgroundColor: state.isHighTouch ? "#2D6A4F" : "#e5e7eb" }}
-                            >
-                              <span
-                                className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
-                                style={{ transform: state.isHighTouch ? "translateX(17px)" : "translateX(2px)" }}
-                              />
-                            </button>
+                            <ToggleSwitch
+                              checked={isHighTouch}
+                              onChange={(val) => setHighTouch(template.id, val)}
+                            />
                             <span className="text-sm text-gray-700">High-touch client — review possible adjustment</span>
                           </label>
 
-                          {state.isHighTouch && (
+                          {isHighTouch && (
                             <div className="mt-2 space-y-2">
                               <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium" style={{ backgroundColor: "#FFF3E0", color: "#C2410C" }}>
                                 <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -859,8 +815,8 @@ function InvoiceQueueView() {
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1.5">Client-facing description</label>
                           <textarea
-                            value={state.description}
-                            onChange={(e) => updateState(template.id, { description: e.target.value })}
+                            value={description}
+                            onChange={(e) => setDescription(template.id, e.target.value)}
                             rows={2}
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 resize-none focus:outline-none transition-shadow"
                             {...focusHandlers}
@@ -1021,253 +977,434 @@ function InvoiceQueueView() {
   );
 }
 
-/* ─── All Time Entries view ──────────────────────────────────── */
-function AllTimeEntriesView() {
-  const [search, setSearch] = useState("");
-  const [clientFilter, setClientFilter] = useState("");
-  const [employeeFilter, setEmployeeFilter] = useState("");
-  const [billableFilter, setBillableFilter] = useState("");
-  const [sortAsc, setSortAsc] = useState(true);
-
-  const uniqueEmployees = Array.from(new Set(ALL_ENTRIES.map((e) => e.employee))).sort();
-
-  const hasActiveFilters =
-    search !== "" || clientFilter !== "" || employeeFilter !== "" || billableFilter !== "" || !sortAsc;
-
-  const filtered = ALL_ENTRIES.filter((e) => {
-    if (search && !e.description.toLowerCase().includes(search.toLowerCase())) return false;
-    if (clientFilter && e.client !== clientFilter) return false;
-    if (employeeFilter && e.employee !== employeeFilter) return false;
-    if (billableFilter === "Billable" && e.billable !== "Yes") return false;
-    if (billableFilter === "Non-Billable" && e.billable === "Yes") return false;
-    return true;
-  }).sort((a, b) => {
-    const da = new Date(a.date).getTime();
-    const db = new Date(b.date).getTime();
-    return sortAsc ? da - db : db - da;
+/* ─── Client Rules view ──────────────────────────────────────── */
+function ClientRulesView({
+  sharedHighTouch,
+  setHighTouch,
+  sharedDescriptions,
+  setDescription,
+}: {
+  sharedHighTouch: Record<string, boolean>;
+  setHighTouch: (id: string, val: boolean) => void;
+  sharedDescriptions: Record<string, string>;
+  setDescription: (id: string, val: string) => void;
+}) {
+  const [defaults, setDefaults] = useState({
+    hourlyRate: 125,
+    productService: "Hourly Accounting services",
+    invoiceDescription: "Monthly Bookkeeping",
+    invoiceTerms: "Due on receipt",
+    dueDateOffset: 5,
   });
-
-  const filteredDuration = sumDurations(filtered.map((e) => e.duration));
-  const filteredAmount = filtered.reduce((sum, e) => sum + e.amount, 0);
-  const filteredClientCount = new Set(filtered.map((e) => e.client)).size;
-
-  function clearFilters() {
-    setSearch("");
-    setClientFilter("");
-    setEmployeeFilter("");
-    setBillableFilter("");
-    setSortAsc(true);
-  }
-
-  const selectCls =
-    "appearance-none text-sm border border-gray-200 rounded-lg pl-3 pr-7 py-2 text-gray-700 bg-white focus:outline-none focus:border-[#40916C] cursor-pointer";
+  const [clientRates, setClientRates] = useState<Record<string, number>>(
+    Object.fromEntries(TEMPLATES.map((t) => [t.id, DEFAULT_RATE]))
+  );
+  const [clientNotes, setClientNotes] = useState<Record<string, string>>(
+    Object.fromEntries(TEMPLATES.map((t) => [t.id, ""]))
+  );
+  const focusHandlers = inputFocusHandlers();
 
   return (
     <div className="flex-1 overflow-y-auto">
-      {/* Page header */}
-      <div className="px-8 pt-6 pb-4">
-        <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
-        <p className="text-sm text-gray-500 mt-0.5">April 2026 Import — QuickBooks Time</p>
+      <div className="px-8 py-6 space-y-6 max-w-4xl">
 
-        {/* Stats bar */}
-        <div className="flex items-center gap-1 mt-3 flex-wrap">
-          {[
-            { label: "Total Entries", value: filtered.length.toString() },
-            { label: "Total Raw Time", value: filteredDuration },
-            { label: "Total Raw Amount", value: formatCurrency(filteredAmount) },
-            { label: "Clients", value: filteredClientCount.toString() },
-          ].map(({ label, value }, i, arr) => (
-            <span key={label} className="flex items-center gap-1">
-              <span className="flex items-baseline gap-1.5 px-2">
-                <span className="text-xs text-gray-400">{label}</span>
-                <span className="font-mono text-sm font-semibold text-gray-700">{value}</span>
-              </span>
-              {i < arr.length - 1 && <span className="text-gray-300 text-xs">·</span>}
-            </span>
-          ))}
+        {/* Page header */}
+        <div>
+          <h1 className="font-display text-2xl text-gray-900">Client Rules</h1>
+          <p className="text-sm text-gray-500 mt-1">Default billing rules apply to all clients unless overridden below</p>
         </div>
 
-        {/* Contextual note */}
-        <div
-          className="mt-4 pl-4 py-2.5 pr-3 rounded-r-lg"
-          style={{ borderLeft: "3px solid #2D6A4F", backgroundColor: "#f9fafb" }}
-        >
-          <p className="text-xs font-medium text-gray-700">
-            These are your raw QBO Time entries for April 2026.
-          </p>
-          <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-            Invoice totals in the queue are calculated directly from this data —
-            grouped by client, rounded to the next quarter hour.
-          </p>
+        {/* Firm-Wide Defaults */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Firm-Wide Defaults</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+
+            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Default hourly rate</span>
+              <div className="relative w-32">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
+                <input
+                  type="number"
+                  step={1}
+                  min={0}
+                  value={defaults.hourlyRate}
+                  onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setDefaults((d) => ({ ...d, hourlyRate: v })); }}
+                  className="w-full text-sm font-mono border border-gray-200 rounded-lg pl-6 pr-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                  {...focusHandlers}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Default product / service</span>
+              <input
+                type="text"
+                value={defaults.productService}
+                onChange={(e) => setDefaults((d) => ({ ...d, productService: e.target.value }))}
+                className="w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                {...focusHandlers}
+              />
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Default invoice description</span>
+              <input
+                type="text"
+                value={defaults.invoiceDescription}
+                onChange={(e) => setDefaults((d) => ({ ...d, invoiceDescription: e.target.value }))}
+                className="w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                {...focusHandlers}
+              />
+            </div>
+
+            <div className="flex items-start justify-between px-6 py-3.5 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Rounding rule</span>
+              <div className="text-right">
+                <p className="text-sm text-gray-400">Round total monthly time up to next 15 minutes</p>
+                <p className="text-xs text-gray-400 mt-1 italic">Ceiling rounding is applied at month-end across the full month, not per entry.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Invoice terms</span>
+              <input
+                type="text"
+                value={defaults.invoiceTerms}
+                onChange={(e) => setDefaults((d) => ({ ...d, invoiceTerms: e.target.value }))}
+                className="w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                {...focusHandlers}
+              />
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Due date offset</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step={1}
+                  min={0}
+                  value={defaults.dueDateOffset}
+                  onChange={(e) => { const v = parseInt(e.target.value); if (!isNaN(v) && v >= 0) setDefaults((d) => ({ ...d, dueDateOffset: v })); }}
+                  className="w-16 text-sm font-mono border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow text-center"
+                  {...focusHandlers}
+                />
+                <span className="text-sm text-gray-400 whitespace-nowrap">days after invoice date</span>
+              </div>
+            </div>
+
+          </div>
         </div>
-      </div>
 
-      {/* Sticky filter bar */}
-      <div
-        className="sticky top-0 z-20 bg-white border-b border-gray-200 px-8 py-3"
-        style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
-      >
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Search */}
-          <div className="relative flex-1 min-w-52">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by staff note or description..."
-              className="w-full text-sm border border-gray-200 rounded-lg pl-9 pr-8 py-2 text-gray-900 focus:outline-none focus:border-[#40916C] placeholder-gray-300"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+        {/* Per-Client Overrides */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Per-Client Overrides</p>
           </div>
-
-          {/* Client filter */}
-          <div className="relative shrink-0">
-            <select
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-              className={selectCls}
-            >
-              <option value="">All Clients</option>
-              <option value="Baine & Company">Baine &amp; Company</option>
-              <option value="Knox Physical Therapy">Knox Physical Therapy</option>
-              <option value="Knoxville Title Agency LLC">Knoxville Title Agency LLC</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-          </div>
-
-          {/* Employee filter */}
-          <div className="relative shrink-0">
-            <select
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-              className={selectCls}
-            >
-              <option value="">All Employees</option>
-              {uniqueEmployees.map((emp) => (
-                <option key={emp} value={emp}>
-                  {emp}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-          </div>
-
-          {/* Billable filter */}
-          <div className="relative shrink-0">
-            <select
-              value={billableFilter}
-              onChange={(e) => setBillableFilter(e.target.value)}
-              className={selectCls}
-            >
-              <option value="">All</option>
-              <option value="Billable">Billable</option>
-              <option value="Non-Billable">Non-Billable</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-          </div>
-
-          {/* Sort toggle */}
-          <button
-            onClick={() => setSortAsc((prev) => !prev)}
-            className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-600 hover:border-gray-300 transition-colors shrink-0 whitespace-nowrap"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
-            Date: {sortAsc ? "Oldest First" : "Newest First"}
-          </button>
-
-          {/* Clear filters */}
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="text-sm text-gray-400 hover:text-gray-600 transition-colors shrink-0 whitespace-nowrap underline underline-offset-2"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="px-8 pb-10 pt-4">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Search className="w-8 h-8 text-gray-300 mb-3" />
-            <h3 className="text-base font-medium text-gray-600">No entries match your filters</h3>
-            <p className="text-sm text-gray-400 mt-1">Try adjusting your search or clearing the filters</p>
-            <button
-              onClick={clearFilters}
-              className="mt-4 text-sm font-medium px-4 py-2 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-300 transition-colors"
-            >
-              Clear filters
-            </button>
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Date</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-44">Client</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">Employee</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-44">Product / Service</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff Note</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Duration</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-14">Rate</th>
-                <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Billable</th>
-                <th className="py-3 px-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((entry, i) => (
-                <tr
-                  key={i}
-                  className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}
-                >
-                  <td className="py-2.5 px-3 font-mono text-xs text-gray-500 whitespace-nowrap">{entry.date}</td>
-                  <td className="py-2.5 px-3 text-xs text-gray-700">{entry.client}</td>
-                  <td className="py-2.5 px-3 text-xs text-gray-700">{entry.employee}</td>
-                  <td className="py-2.5 px-3 text-xs text-gray-500">{entry.productService}</td>
-                  <td className="py-2.5 px-3 text-xs text-gray-700 leading-relaxed">{entry.description}</td>
-                  <td className="py-2.5 px-3 font-mono text-xs text-gray-500 whitespace-nowrap">{entry.duration}</td>
-                  <td className="py-2.5 px-3 font-mono text-xs text-gray-500">${entry.rate}</td>
-                  <td className="py-2.5 px-3">
-                    <span
-                      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
-                      style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}
-                    >
-                      {entry.billable}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-3 text-right font-mono text-xs text-gray-700">
-                    {formatCurrency(entry.amount)}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500">Client</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-32">Hourly Rate</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Invoice Description</th>
+                  <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 w-28">High-Touch</th>
+                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 w-44">Notes</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ backgroundColor: "#f3f4f6" }} className="border-t-2 border-gray-200">
-                <td className="py-3 px-3" />
-                <td className="py-3 px-3" />
-                <td className="py-3 px-3 text-xs font-semibold text-gray-700">{filtered.length} entries</td>
-                <td className="py-3 px-3" />
-                <td className="py-3 px-3" />
-                <td className="py-3 px-3 font-mono text-xs font-semibold text-gray-700">{filteredDuration}</td>
-                <td className="py-3 px-3" />
-                <td className="py-3 px-3" />
-                <td className="py-3 px-3 text-right font-mono text-xs font-semibold text-gray-700">
-                  {formatCurrency(filteredAmount)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        )}
+              </thead>
+              <tbody>
+                {TEMPLATES.map((t, i) => {
+                  const isHT = sharedHighTouch[t.id];
+                  const desc = sharedDescriptions[t.id];
+                  const isCustomDesc = desc !== defaults.invoiceDescription;
+                  const rowBg = isHT ? "#FFF8F5" : i % 2 === 0 ? "#ffffff" : "rgba(249,250,251,0.6)";
+                  return (
+                    <tr key={t.id} style={{ backgroundColor: rowBg }}>
+                      <td
+                        className="px-5 py-3.5"
+                        style={{ borderLeft: isHT ? "3px solid #E76F51" : "3px solid transparent" }}
+                      >
+                        <span className="text-sm font-medium text-gray-800">{t.client}</span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="relative w-24">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
+                          <input
+                            type="number"
+                            step={1}
+                            min={0}
+                            value={clientRates[t.id]}
+                            onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v >= 0) setClientRates((r) => ({ ...r, [t.id]: v })); }}
+                            className="w-full text-sm font-mono border border-gray-200 rounded-lg pl-6 pr-2 py-2 text-gray-900 focus:outline-none transition-shadow"
+                            {...focusHandlers}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={desc}
+                            onChange={(e) => setDescription(t.id, e.target.value)}
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                            {...focusHandlers}
+                          />
+                          {isCustomDesc && (
+                            <span
+                              className="absolute -top-2 -right-1 font-medium px-1.5 py-0.5 rounded"
+                              style={{ fontSize: "10px", lineHeight: "1.4", backgroundColor: "#EFF6FF", color: "#3B82F6" }}
+                            >
+                              custom
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-center">
+                        <ToggleSwitch
+                          checked={isHT}
+                          onChange={(val) => setHighTouch(t.id, val)}
+                        />
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <input
+                          type="text"
+                          value={clientNotes[t.id]}
+                          onChange={(e) => setClientNotes((n) => ({ ...n, [t.id]: e.target.value }))}
+                          placeholder="Add a note..."
+                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow placeholder-gray-300"
+                          {...focusHandlers}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* How Rounding Works */}
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
+          <p className="text-xs font-semibold text-gray-700 mb-3">How Rounding Works</p>
+          <div className="space-y-2 text-sm text-gray-600 leading-relaxed">
+            <p>
+              <span className="font-medium text-gray-700">Rule:</span> Total monthly hours per client are rounded up to the next quarter hour (0.25 hrs) at month-end. Rounding is applied once across the full month — not per individual entry.
+            </p>
+            <p>
+              <span className="font-medium text-gray-700">Formula:</span>{" "}
+              <code className="font-mono text-xs bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-700">
+                ceil(totalDecimalHours / 0.25) * 0.25
+              </code>
+            </p>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="text-xs font-mono">
+              <thead>
+                <tr className="text-gray-500">
+                  <th className="text-left pr-10 py-1 font-medium">Raw time</th>
+                  <th className="text-left pr-10 py-1 font-medium">Decimal hours</th>
+                  <th className="text-left py-1 font-medium">Rounded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["11h 53m", "11.88 hrs", "12.00 hrs"],
+                  ["11h 48m", "11.80 hrs", "12.00 hrs"],
+                  ["31h 34m", "31.57 hrs", "31.75 hrs"],
+                ].map(([raw, dec, rounded]) => (
+                  <tr key={raw} className="text-gray-700 border-t border-gray-200">
+                    <td className="pr-10 py-1.5">{raw}</td>
+                    <td className="pr-10 py-1.5">{dec}</td>
+                    <td className="py-1.5">{rounded}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* High-Touch Client Buffer */}
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
+          <p className="text-xs font-semibold text-gray-700 mb-2">High-Touch Client Buffer</p>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Approximately 5 clients receive a manual time adjustment at billing time to account for frequent calls and drop-in questions. These adjustments (typically 15–45 minutes, rarely more) are applied during invoice review — not logged as time entries in QuickBooks Time.
+          </p>
+          <p className="text-sm text-gray-600 leading-relaxed mt-2">
+            Flag a client as High-Touch above to surface quick-add adjustment buttons in the Invoice Queue when reviewing that client&apos;s draft.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+/* ─── Settings view ──────────────────────────────────────────── */
+function SettingsView() {
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="px-8 py-6 space-y-6 max-w-4xl">
+
+        {/* Page header */}
+        <div>
+          <h1 className="font-display text-2xl text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500 mt-1">System configuration and integration status</p>
+        </div>
+
+        {/* Integrations & Data Sources */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Integrations &amp; Data Sources</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+
+            <div className="flex items-start justify-between px-6 py-4 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">QBO Time import source</span>
+              <div className="text-right">
+                <p className="text-sm text-gray-800">Uploaded report</p>
+                <p className="text-xs text-gray-400 mt-0.5">Future: QuickBooks Time API</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Invoice destination</span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-sm text-gray-800">QuickBooks Online</span>
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}>
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Connected
+                </span>
+                <span className="text-xs text-gray-400">Draft invoices only</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Payment portal</span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-sm text-gray-800">BillerGenie</span>
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}>
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Active
+                </span>
+                <span className="text-xs text-gray-400">Auto-syncs from QBO via Premium plan</span>
+              </div>
+            </div>
+
+            <div className="flex items-start justify-between px-6 py-4 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">BillerGenie plan</span>
+              <div className="text-right">
+                <p className="text-sm text-gray-800">Premium</p>
+                <p className="font-mono text-xs text-gray-400 mt-0.5">$69.95/month + 0.50% per invoice collected</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Billing Behavior */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Billing Behavior</p>
+          </div>
+          <div className="divide-y divide-gray-100">
+
+            <div className="flex items-center justify-between px-6 py-3.5">
+              <span className="text-sm text-gray-500">Auto-send invoices</span>
+              <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: "#FEF2F2", color: "#DC2626" }}>
+                Off
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5">
+              <span className="text-sm text-gray-500">Require owner approval before sending</span>
+              <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}>
+                On
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5">
+              <span className="text-sm text-gray-500">Invoice date rule</span>
+              <span className="text-sm text-gray-700">1st of the following month</span>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5">
+              <span className="text-sm text-gray-500">Due date rule</span>
+              <span className="text-sm text-gray-700">5 days after invoice date</span>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5">
+              <span className="text-sm text-gray-500">Rounding method</span>
+              <span className="font-mono text-sm text-gray-700">Ceiling to next 0.25 hrs</span>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Product Fit Callout */}
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5 border-l-4" style={{ borderLeftColor: "#2D6A4F" }}>
+          <p className="text-xs font-semibold text-gray-700 mb-2">How This Fits Your Existing Tools</p>
+          <p className="text-sm text-gray-600 leading-relaxed mb-4">
+            This dashboard does not replace TaxDome, QuickBooks, or BillerGenie. It sits between QBO Time and QuickBooks invoices to automate the one step those tools don&apos;t handle: turning approved time entries into summarized draft invoices, ready for your review.
+          </p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[
+              { label: "QBO Time", highlight: false },
+              { label: "Billing Review Dashboard", highlight: true },
+              { label: "QuickBooks Draft Invoice", highlight: false },
+              { label: "BillerGenie Payment Portal", highlight: false },
+            ].map((item, i, arr) => (
+              <span key={item.label} className="flex items-center gap-1.5">
+                <span
+                  className="font-mono text-xs px-2.5 py-1.5 rounded border"
+                  style={
+                    item.highlight
+                      ? { backgroundColor: "#2D6A4F", color: "white", borderColor: "#2D6A4F" }
+                      : { backgroundColor: "white", color: "#374151", borderColor: "#e5e7eb" }
+                  }
+                >
+                  {item.label}
+                </span>
+                {i < arr.length - 1 && <ArrowRight className="w-3 h-3 text-gray-400 shrink-0" />}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* About */}
+        <div className="rounded-xl bg-gray-100 px-6 py-5">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">About</p>
+          <div className="space-y-1 text-sm text-gray-500">
+            <p className="font-semibold text-gray-600">Billing Review Dashboard — Prototype</p>
+            <p>Built for P&amp;L Business Services · May 2026</p>
+            <p>Pilot client: Lea Ann Sanford, Owner</p>
+            <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+              <p className="text-sm text-gray-500 leading-relaxed">
+                This prototype uses real April 2026 data from QuickBooks Time. No backend, no API connections, no live QuickBooks integration. All invoice actions simulate the real workflow — when the product is live, &quot;Create QuickBooks Draft&quot; will POST directly to the QBO Invoice API.
+              </p>
+              <p className="font-mono text-xs text-gray-500">
+                3 clients · 55 time entries · $6,968.75 in proposed billing
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+/* ─── Placeholder ────────────────────────────────────────────── */
+function PlaceholderView({ title }: { title: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-0">
+      <div className="text-center px-6">
+        <h2 className="font-display text-2xl text-gray-800 mb-2">{title}</h2>
+        <p className="text-sm text-gray-400">This section is coming soon.</p>
       </div>
     </div>
   );
@@ -1276,6 +1413,19 @@ function AllTimeEntriesView() {
 /* ─── Main page component ────────────────────────────────────── */
 export default function InvoicesPage() {
   const [activeView, setActiveView] = useState<NavView>("billing-run");
+  const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
+    Object.fromEntries(TEMPLATES.map((t) => [t.id, false]))
+  );
+  const [sharedDescriptions, setSharedDescriptions] = useState<Record<string, string>>(
+    Object.fromEntries(TEMPLATES.map((t) => [t.id, t.defaultDescription]))
+  );
+
+  function setHighTouch(id: string, val: boolean) {
+    setSharedHighTouch((prev) => ({ ...prev, [id]: val }));
+  }
+  function setDescription(id: string, val: string) {
+    setSharedDescriptions((prev) => ({ ...prev, [id]: val }));
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -1306,11 +1456,25 @@ export default function InvoicesPage() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {activeView === "invoice-queue" && <InvoiceQueueView />}
+        {activeView === "invoice-queue" && (
+          <InvoiceQueueView
+            sharedHighTouch={sharedHighTouch}
+            setHighTouch={setHighTouch}
+            sharedDescriptions={sharedDescriptions}
+            setDescription={setDescription}
+          />
+        )}
         {activeView === "billing-run" && <BillingRunDashboard />}
-        {activeView === "time-entries" && <AllTimeEntriesView />}
-        {activeView === "client-rules" && <PlaceholderView title="Client Rules" />}
-        {activeView === "settings" && <PlaceholderView title="Settings" />}
+        {activeView === "time-entries" && <PlaceholderView title="All Time Entries" />}
+        {activeView === "client-rules" && (
+          <ClientRulesView
+            sharedHighTouch={sharedHighTouch}
+            setHighTouch={setHighTouch}
+            sharedDescriptions={sharedDescriptions}
+            setDescription={setDescription}
+          />
+        )}
+        {activeView === "settings" && <SettingsView />}
       </div>
     </div>
   );
