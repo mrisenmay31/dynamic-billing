@@ -126,10 +126,10 @@ All UI lives in this single file. All five nav views are fully implemented. Pers
 
 1. **Billing Run** (default on load):
    - Page header: "May 2026 Billing Run / April 2026 Time Entries" with "In Review" badge
-   - 4 summary cards: Clients Ready, Proposed Billing (live from `invoiceStates`), Rounded Hours (live from `invoiceStates`), Time Saved
+   - 3 summary cards: Clients Ready, Proposed Billing (live from `invoiceStates`), Rounded Hours (live from `invoiceStates`) — equal-width grid-cols-3
    - 4-step progress indicator (step 2 "Reviewed Time" is active)
    - Billing totals breakdown panel with +$62.64 rounding highlight
-   - Review summary with time-saved comparison chips
+   - Review summary (no time-saved comparison chips)
    - Product fit callout with `QBO Time → ... → BillerGenie` pill chain
 
 2. **Invoice Queue** — review queue with 3 real April 2026 client cards:

@@ -380,12 +380,11 @@ function BillingRunDashboard({ invoiceStates }: { invoiceStates: Record<string, 
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {[
             { label: "Clients Ready for Review", value: "3", mono: false },
             { label: "Proposed Billing", value: formatCurrency(liveTotalBilling), mono: true },
             { label: "Rounded Billable Hours", value: `${formatHours(liveRoundedHours)} hrs`, mono: true },
-            { label: "Estimated Time Saved", value: "2.5+ hours", mono: false },
           ].map(({ label, value, mono }) => (
             <div key={label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider leading-tight">{label}</p>
@@ -449,14 +448,6 @@ function BillingRunDashboard({ invoiceStates }: { invoiceStates: Record<string, 
             <span className="font-semibold text-gray-900">{formatCurrency(liveTotalBilling)}</span> in proposed billing.
             Instead of manually grouping time and rebuilding invoices, review the prepared drafts and create QuickBooks drafts when ready.
           </p>
-          <div className="mt-4 flex items-center gap-4 flex-wrap">
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full" style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}>
-              Estimated billing prep time: 5–10 minutes
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gray-100 text-gray-500">
-              Previous manual process: 2–3 hours
-            </span>
-          </div>
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
