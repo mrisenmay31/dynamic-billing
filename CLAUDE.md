@@ -197,22 +197,56 @@ rawMinutes (static) → decimalHours = rawMinutes/60 → roundedHours = ceilToQu
 ```
 All display surfaces (Billing Math Summary, Invoice Preview, card header, stats, action bar) derive from the same `state.hours` value.
 
+### What exists (as of 2026-05-25, M1 complete)
+
+#### Backend / infrastructure
+- **Supabase project** provisioned: ref `vvmfbtvxsjeyrmsqodon`, region `us-east-1`
+- **Schema**: 15 tables, RLS on all, full indexes — migration at `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
+- **Seed data**: P&L firm (UUID `00000000-0000-0000-0000-000000000001`), 3 customers, 88 April 2026 time entries, 1 billing run, 3 invoice drafts — `apps/web/supabase/seed.sql`
+- **Supabase clients**: `src/lib/supabase/client.ts` (browser), `src/lib/supabase/server.ts` (SSR), `src/lib/supabase/admin.ts` (service role)
+- **TypeScript types**: generated at `src/types/supabase.ts` — re-run `supabase gen types typescript --linked 2>/dev/null > src/types/supabase.ts` after migrations
+- **Helper libraries**:
+  - `src/lib/crypto/tokens.ts` — encrypt/decrypt stubs (real impl in M2)
+  - `src/lib/audit/log.ts` — writes to `audit_logs` via admin client
+  - `src/lib/qbo/write-guard.ts` — throws if `firms.qbo_write_enabled = false`
+  - `src/lib/email/client.ts` + `src/lib/email/templates/test.ts` — Resend wrapper
+- **API routes**:
+  - `POST /api/admin/test-email` — sends test email to authenticated user
+  - `GET /api/auth/callback` — PKCE code exchange (used by login form flow)
+- **Auth callback page**: `src/app/auth/callback/page.tsx` — client component for implicit flow (admin-generated links)
+- **Matt's auth user**: UUID `29b3856e-8ce4-424b-a083-ceb14af7372d`, linked to P&L firm in `firm_users`
+
+#### Auth status (as of 2026-05-25)
+- Magic link auth is **not yet confirmed working** end-to-end on Vercel
+- Login page exists at `/login` and renders correctly
+- Two auth flows in place: admin-generated magic links (implicit, `#access_token` hash) → handled by `src/app/auth/callback/page.tsx` client component; login-form-triggered OTP (PKCE, `?code=`) → handled by `GET /api/auth/callback`
+- **Root cause of redirect loop identified and fixed**: middleware was intercepting `/auth/callback` before the client page could load. Fix: added `/auth/callback` to middleware pass-through list alongside `/login` and `/api/auth/**`
+- Supabase email rate limit (3/hr free tier) was hit during testing; use `node --env-file=.env.local scripts/get-magic-link.mjs` (from `apps/web/`) to generate links without sending email
+- Supabase dashboard settings required (manual): magic link enabled, password sign-in disabled, open sign-up disabled, Site URL = `https://dynamic-billing.vercel.app`
+
+#### Prototype wiring
+- `src/app/invoices/page.tsx` — server component, fetches from Supabase, passes data to `InvoicesClient`
+- `src/app/invoices/InvoicesClient.tsx` — all UI/state logic (moved from old page.tsx), receives `templates`, `allEntries`, `defaultRate` as props
+- All 5 screens render against DB data
+
 ### What does NOT exist yet
-- No database, no Supabase project
-- No QB Time or QBO API integration
-- No OAuth flows
+- No QB Time or QBO API integration (M2)
+- No OAuth flows (M2)
 - No worker process
-- No authentication
-- The full scaffold plan is at `/Users/mattrisenmay/.claude/plans/now-let-s-scaffold-the-squishy-gizmo.md`
+- M1 acceptance criterion not fully verified: auth flow not confirmed working
 
 ### Vercel deployment notes
 - Root Directory must be set to `apps/web` in Vercel Project Settings
 - Framework Preset: Next.js
 - Output Directory: default (`.next`) — do NOT override to `apps/web/.next`
 - Deploys automatically from `main` branch via GitHub integration
+- Required env vars in Vercel: all vars from `apps/web/.env.local.example` plus `NEXT_PUBLIC_APP_URL=https://dynamic-billing.vercel.app`
 
-### Next steps after May 20 call
-Build the real scaffold per the plan: Supabase schema, QB Time + QBO OAuth flows, polling worker on Railway, review queue wired to real data.
+### CLI commands (run from `apps/web/`)
+- Generate magic link (no email): `node --env-file=.env.local scripts/get-magic-link.mjs`
+- Apply seed data: `supabase db query --linked -f supabase/seed.sql`
+- Push migrations: `supabase db push`
+- Regenerate types: `supabase gen types typescript --linked 2>/dev/null > src/types/supabase.ts`
 
 ## Key Project Files
 
