@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import type { Database } from '@/types/supabase'
 
 export async function GET(request: NextRequest) {
@@ -9,7 +8,10 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/invoices'
 
   if (code) {
-    const cookieStore = await cookies()
+    // Pre-create the redirect response so we can set session cookies directly on it.
+    // Using cookies() from next/headers here does NOT work — those cookies don't
+    // attach to a NextResponse.redirect() object returned later.
+    const redirectResponse = NextResponse.redirect(`${origin}${next}`)
 
     const supabase = createServerClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,12 +19,13 @@ export async function GET(request: NextRequest) {
       {
         cookies: {
           getAll() {
-            return cookieStore.getAll()
+            return request.cookies.getAll()
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => {
+              request.cookies.set(name, value)
+              redirectResponse.cookies.set(name, value, options)
+            })
           },
         },
       }
@@ -31,7 +34,7 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
+      return redirectResponse
     }
   }
 
