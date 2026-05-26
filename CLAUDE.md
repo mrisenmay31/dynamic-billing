@@ -240,7 +240,55 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 - No QB Time or QBO API integration (M2)
 - No OAuth flows (M2)
 - No worker process
-- M1 complete: auth flow confirmed working end-to-end on Vercel
+- M1 acceptance criterion met: auth confirmed working end-to-end on Vercel
+
+---
+
+### M2 development strategy — decision tree for next session
+
+At the start of the next session, check whether Lea Ann Sanford has responded
+with QBO and QB Time credentials.
+
+**If Lea Ann HAS provided access:**
+- Skip QB Time free trial setup entirely
+- Verify QBO accountant invite and QB Time admin access work
+- Log her duplicate customer list
+- Confirm QB Time Approvals Add-On status
+- Begin M2 against her real credentials
+
+**If Lea Ann has NOT yet provided access:**
+Proceed with sandbox + free trial build. The full system can be built through M6
+without her credentials. When she provides access it becomes a credential swap,
+not a build dependency.
+
+QBO (sandbox — already provisioned):
+- Open the Intuit Developer sandbox QBO UI
+- Find or create a service item named exactly `Hourly Accounting services`
+- Note its internal QBO Item ID — required for the M6 invoice line item ItemRef lookup
+
+QB Time (free trial — needs setup before M2b):
+- Sign up for a QB Time free trial account
+- Create 3 jobcodes named exactly: `Knoxville Title Agency LLC`, `Baine & Company`,
+  `Knox Physical Therapy` (matches seeded customers in the database)
+- Add at least one test employee and log time entries against each jobcode
+- Enable the QB Time API Add-On (Feature Add-ons → API → Add a new application)
+  and note the OAuth client ID and secret
+
+Build order:
+  M2a — QBO OAuth flow + token storage + refresh (sandbox)
+  M2b — QB Time OAuth flow + polling + timesheet pull (free trial)
+  M3  — Customer mapping UI + jobcode-to-customer table (free trial jobcodes)
+  M4  — Billing run engine + cron scaffold (seeded DB data)
+  M5  — Review queue DB wiring + approval actions (seeded DB data)
+  M6  — QBO invoice creation + bulk send + idempotency (sandbox QBO)
+  --  — Swap to Lea Ann's real credentials when available
+  M7  — UAT against real data
+
+Open question before M2 starts: confirm in the Intuit Developer portal whether
+the QBO sandbox app and QB Time free trial app can share one OAuth app registration
+or require separate ones. This affects token storage structure in M2.
+
+---
 
 ### Vercel deployment notes
 - Root Directory must be set to `apps/web` in Vercel Project Settings

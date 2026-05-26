@@ -1,53 +1,90 @@
-# Fix: Settings Integration Badge Language
+Two files need to change. Do not touch anything else.
 
-## Context
+─── FILE 1: apps/web/scripts/get-magic-link.mjs ───
 
-In `apps/web/src/app/invoices/page.tsx`, the `SettingsView` component currently shows
-"Connected" and "Active" badges next to QuickBooks Online and BillerGenie. For a prototype
-with no live API connections, these labels could mislead Lea Ann into thinking the system is
-already integrated with her accounts.
+Change the redirectTo from /api/auth/callback back to /auth/callback:
 
----
+  redirectTo: 'https://dynamic-billing.vercel.app/auth/callback',
 
-## What to change
+─── FILE 2: src/app/auth/callback/page.tsx ───
 
-In `SettingsView`, find the **Integrations & Data Sources** panel rows and update as follows:
+Replace the entire file with this:
 
-### QBO Time import source row
-- Value: keep `Uploaded report` (already correct)
-- Sub-note: keep `Future: QuickBooks Time API` (already correct)
-- No badge on this row — no change needed
+"use client";
 
-### Invoice destination row (QuickBooks Online)
-- Remove the green `"Connected"` badge
-- Replace with a gray/neutral badge that reads `"Ready to Connect"`
-- Badge style: `backgroundColor: '#F1F5F9', color: '#475569'` (slate tones, not green)
-- Keep the `"Draft invoices only"` sub-note
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
-### Payment portal row (BillerGenie)
-- Remove the green `"Active"` badge
-- Replace with a neutral badge that reads `"Syncs via Premium Plan"`
-- Badge style: same slate tones as above — `backgroundColor: '#F1F5F9', color: '#475569'`
-- Keep the `"Auto-syncs from QBO via Premium plan"` sub-note
+export default function AuthCallbackPage() {
+  const router = useRouter();
 
-### BillerGenie plan row
-- No badge on this row — no change needed
+  useEffect(() => {
+    const supabase = createClient();
+    let redirected = false;
 
----
+    // Register listener FIRST before checking session.
+    // Supabase parses the #access_token hash asynchronously on init —
+    // if we call getSession() first we race against that parsing and lose.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (
+          (event === "SIGNED_IN" || event === "INITIAL_SESSION") &&
+          session &&
+          !redirected
+        ) {
+          redirected = true;
+          subscription.unsubscribe();
+          router.replace("/invoices");
+        }
+      }
+    );
 
-## Also update the "How This Fits Your Existing Tools" callout
+    // Also check immediately in case parsing already completed
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session && !redirected) {
+        redirected = true;
+        subscription.unsubscribe();
+        router.replace("/invoices");
+      }
+    });
 
-In the same `SettingsView`, the product fit callout has a pipeline of chips. Find the chip
-for `"QBO Time"` and update its sub-note text (if any) to be consistent — no "Connected"
-or "Active" language anywhere in Settings.
+    // Fallback: if nothing fires in 5s, give up and go to login
+    const timeout = setTimeout(() => {
+      if (!redirected) {
+        subscription.unsubscribe();
+        router.replace("/login");
+      }
+    }, 5000);
 
----
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, [router]);
 
-## What NOT to change
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <p className="text-sm text-gray-500">Signing you in…</p>
+    </div>
+  );
+}
 
-- Do not change any badge styling in the Invoice Queue, Billing Run, or Client Rules views.
-- Do not touch the green `"Draft Created in QBO"` status badge in the Invoice Queue — that
-  is a workflow status indicator, not an integration status indicator, and is correct as-is.
-- Do not change the About panel text.
-- Do not touch any other component, utility function, data constant, or CSS.
-- TypeScript throughout — no `any` types.
+─── EXPLANATION FOR CLAUDE CODE ───
+
+The root cause: Supabase is using implicit flow, sending #access_token= in the 
+URL hash (not ?code= in the query string). Hashes are never sent to the server, 
+so /api/auth/callback always sees no code and fails.
+
+The original /auth/callback client component had a race condition: it called 
+getSession() first, got null (hash not yet parsed), then registered 
+onAuthStateChange — but by then the SIGNED_IN event had already fired and 
+was missed. The 3-second fallback then fired and sent the user to /login.
+
+The fix: register onAuthStateChange BEFORE calling getSession(), handle both 
+SIGNED_IN and INITIAL_SESSION events, use a redirected flag to prevent 
+double-fires, and give 5 seconds before the fallback.
+
+After deploying: generate a fresh link with 
+  node --env-file=.env.local scripts/get-magic-link.mjs
+and confirm it lands on /invoices.
