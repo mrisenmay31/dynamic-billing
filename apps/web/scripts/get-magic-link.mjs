@@ -10,7 +10,7 @@ const { data, error } = await supabase.auth.admin.generateLink({
   type: 'magiclink',
   email: 'matt@ctaintegrity.com',
   options: {
-    redirectTo: 'https://dynamic-billing.vercel.app/auth/callback',
+    redirectTo: 'https://dynamic-billing.vercel.app/api/auth/callback',
   },
 })
 
