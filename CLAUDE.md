@@ -212,7 +212,7 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
   - `src/lib/email/client.ts` + `src/lib/email/templates/test.ts` — Resend wrapper
 - **API routes**:
   - `POST /api/admin/test-email` — sends test email to authenticated user
-  - `GET /api/auth/callback` — PKCE code exchange (used by login form flow)
+  - `GET /api/auth/callback` — PKCE code exchange (used by login form flow); error params: `?error=no_code` (no code in URL) or `?error=exchange_failed` (Supabase rejected the code)
 - **Auth callback page**: `src/app/auth/callback/page.tsx` — client component for implicit flow (admin-generated links)
 - **Matt's auth user**: UUID `29b3856e-8ce4-424b-a083-ceb14af7372d`, linked to P&L firm in `firm_users`
 
