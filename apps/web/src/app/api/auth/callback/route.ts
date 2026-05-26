@@ -7,6 +7,10 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/invoices'
 
+  if (!code) {
+    return NextResponse.redirect(`${origin}/login?error=no_code`)
+  }
+
   if (code) {
     // Pre-create the redirect response so we can set session cookies directly on it.
     // Using cookies() from next/headers here does NOT work — those cookies don't
@@ -38,5 +42,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  return NextResponse.redirect(`${origin}/login?error=exchange_failed`)
 }
