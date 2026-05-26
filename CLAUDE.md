@@ -216,13 +216,20 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 - **Auth callback page**: `src/app/auth/callback/page.tsx` — client component for implicit flow (admin-generated links)
 - **Matt's auth user**: UUID `29b3856e-8ce4-424b-a083-ceb14af7372d`, linked to P&L firm in `firm_users`
 
-#### Auth status (as of 2026-05-25)
-- Magic link auth is **not yet confirmed working** end-to-end on Vercel
-- Login page exists at `/login` and renders correctly
-- Two auth flows in place: admin-generated magic links (implicit, `#access_token` hash) → handled by `src/app/auth/callback/page.tsx` client component; login-form-triggered OTP (PKCE, `?code=`) → handled by `GET /api/auth/callback`
-- **Root cause of redirect loop identified and fixed**: middleware was intercepting `/auth/callback` before the client page could load. Fix: added `/auth/callback` to middleware pass-through list alongside `/login` and `/api/auth/**`
-- Supabase email rate limit (3/hr free tier) was hit during testing; use `node --env-file=.env.local scripts/get-magic-link.mjs` (from `apps/web/`) to generate links without sending email
-- Supabase dashboard settings required (manual): magic link enabled, password sign-in disabled, open sign-up disabled, Site URL = `https://dynamic-billing.vercel.app`
+#### Auth status (as of 2026-05-25, CONFIRMED WORKING)
+- Magic link auth is confirmed working end-to-end on Vercel
+- Production login: user submits email on `/login` → Supabase sends magic link via email using PKCE flow → link redirects to `/api/auth/callback?code=XXX` → route handler calls `exchangeCodeForSession(code)`, sets session cookies on the redirect response, sends user to `/invoices`
+- **Two callback paths -- do not confuse them:**
+  - `/api/auth/callback` (`src/app/api/auth/callback/route.ts`) -- PKCE flow (`?code=`), used by the login form. This is the production path.
+  - `/auth/callback` (`src/app/auth/callback/page.tsx`) -- implicit flow (`#access_token=` hash), used only by admin-generated links from `scripts/get-magic-link.mjs`
+- **Admin script limitations:** `scripts/get-magic-link.mjs` uses `admin.generateLink()` which produces implicit-flow links. These have their own short OTP expiry not controlled by the Supabase dashboard OTP setting, are one-time use, and are consumed even on failed attempts. Do NOT use the admin script to validate the production auth flow. Use the login form + actual email instead.
+- **Supabase allowed redirect URLs (both required):**
+  - `https://dynamic-billing.vercel.app/api/auth/callback`
+  - `https://dynamic-billing.vercel.app/auth/callback`
+- **Three bugs fixed during auth debugging:**
+  1. Middleware was intercepting `/auth/callback` -- fixed by adding it to the pass-through list alongside `/login` and `/api/auth/**`
+  2. In `route.ts`, session cookies were set on a throwaway `supabaseResponse` object inside `setAll` instead of on `redirectResponse` (the object actually returned to the browser) -- fixed by setting cookies directly on `redirectResponse`
+  3. In `src/app/auth/callback/page.tsx`, `onAuthStateChange` was registered inside the `else` block after `getSession()` returned null, creating a race condition where the SIGNED_IN event could fire before the listener was registered -- fixed by registering the listener first, then calling `getSession()`, and listening for both `SIGNED_IN` and `INITIAL_SESSION` events
 
 #### Prototype wiring
 - `src/app/invoices/page.tsx` — server component, fetches from Supabase, passes data to `InvoicesClient`
@@ -233,7 +240,7 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 - No QB Time or QBO API integration (M2)
 - No OAuth flows (M2)
 - No worker process
-- M1 acceptance criterion not fully verified: auth flow not confirmed working
+- M1 complete: auth flow confirmed working end-to-end on Vercel
 
 ### Vercel deployment notes
 - Root Directory must be set to `apps/web` in Vercel Project Settings
