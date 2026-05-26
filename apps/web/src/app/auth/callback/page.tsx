@@ -1,11 +1,5 @@
 "use client";
 
-// Handles implicit-flow magic links (admin-generated or any redirect with
-// #access_token in the hash). The Supabase browser client automatically
-// detects and stores the session from the URL hash on initialization.
-// The PKCE flow (login form → email → ?code=xxx) is handled server-side
-// by /api/auth/callback/route.ts.
-
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -15,29 +9,46 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     const supabase = createClient();
+    let redirected = false;
 
-    // Give the Supabase client a moment to parse the hash and store the session
-    const check = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.replace("/invoices");
-      } else {
-        // Listen for the SIGNED_IN event in case parsing is still in progress
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          if (event === "SIGNED_IN" && session) {
-            subscription.unsubscribe();
-            router.replace("/invoices");
-          }
-        });
-        // Fallback: if no session after 3s, back to login
-        setTimeout(() => {
+    // Register listener FIRST before checking session.
+    // Supabase parses the #access_token hash asynchronously on init —
+    // if we call getSession() first we race against that parsing and lose.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (
+          (event === "SIGNED_IN" || event === "INITIAL_SESSION") &&
+          session &&
+          !redirected
+        ) {
+          redirected = true;
           subscription.unsubscribe();
-          router.replace("/login");
-        }, 3000);
+          router.replace("/invoices");
+        }
       }
-    };
+    );
 
-    check();
+    // Also check immediately in case parsing already completed
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session && !redirected) {
+        redirected = true;
+        subscription.unsubscribe();
+        router.replace("/invoices");
+      }
+    });
+
+    // Fallback: if nothing fires in 5s, give up and go to login
+    const timeout = setTimeout(() => {
+      if (!redirected) {
+        subscription.unsubscribe();
+        router.replace("/login");
+      }
+    }, 5000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [router]);
 
   return (
