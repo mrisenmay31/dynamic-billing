@@ -4,9 +4,8 @@ import { adminClient } from '@/lib/supabase/admin'
 import { exchangeCodeForTokens } from '@/lib/qbo/oauth'
 import { saveQboConnection } from '@/lib/qbo/connection'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
-
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  const origin = request.nextUrl.origin
   const { searchParams } = request.nextUrl
   const code = searchParams.get('code')
   const realmId = searchParams.get('realmId')
@@ -14,23 +13,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const error = searchParams.get('error')
 
   if (error) {
-    return NextResponse.redirect(`${APP_URL}/settings?error=qbo_denied`)
+    return NextResponse.redirect(`${origin}/invoices?error=qbo_denied`)
   }
 
   if (!code || !realmId) {
-    return NextResponse.redirect(`${APP_URL}/settings?error=qbo_missing_params`)
+    return NextResponse.redirect(`${origin}/invoices?error=qbo_missing_params`)
   }
 
   const savedState = request.cookies.get('qbo_oauth_state')?.value
   if (!savedState || savedState !== state) {
-    return NextResponse.redirect(`${APP_URL}/settings?error=qbo_state_mismatch`)
+    return NextResponse.redirect(`${origin}/invoices?error=qbo_state_mismatch`)
   }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
-    return NextResponse.redirect(`${APP_URL}/login`)
+    return NextResponse.redirect(`${origin}/login`)
   }
 
   const { data: firmUser } = await adminClient
@@ -40,7 +39,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     .single()
 
   if (!firmUser) {
-    return NextResponse.redirect(`${APP_URL}/settings?error=qbo_no_firm`)
+    return NextResponse.redirect(`${origin}/invoices?error=qbo_no_firm`)
   }
 
   try {
@@ -48,10 +47,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     await saveQboConnection(firmUser.firm_id, realmId, tokens)
   } catch (err) {
     console.error('QBO callback error:', err)
-    return NextResponse.redirect(`${APP_URL}/settings?error=qbo_exchange_failed`)
+    return NextResponse.redirect(`${origin}/invoices?error=qbo_exchange_failed`)
   }
 
-  const response = NextResponse.redirect(`${APP_URL}/settings?connected=qbo`)
+  const response = NextResponse.redirect(`${origin}/invoices?connected=qbo`)
   response.cookies.delete('qbo_oauth_state')
   return response
 }

@@ -1,16 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { getAuthorizationUrl } from '@/lib/qbo/oauth'
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
-
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) {
-    return NextResponse.redirect(`${APP_URL}/login`)
+    return NextResponse.redirect(`${request.nextUrl.origin}/login`)
   }
 
   const state = randomBytes(16).toString('hex')
