@@ -97,7 +97,8 @@ firms:
 
 ## Open Technical Questions (pre-build validation)
 
-- QB Time refresh token TTL (undocumented — requires hands-on testing)
+- ~~QB Time refresh token TTL (undocumented — requires hands-on testing)~~ **RESOLVED:** access token TTL is 10 days (864,000 seconds, confirmed in QB Time API docs). Refresh token **rotates** — a new refresh token is issued on every exchange; must overwrite the stored token after each refresh or the next call will fail.
+- ~~Separate OAuth registrations or shared?~~ **RESOLVED:** Completely separate. QB Time credentials come from inside the TSheets account (API Add-On), not developer.intuit.com. Two distinct client_id/client_secret pairs in env vars; two distinct access_token/refresh_token rows per firm in DB.
 - Whether `last_modified_timestamps` distinguishes user approval changes from timesheet edits
 - Whether any internal linkage exists between a firm's QBO `realmId` and QB Time account ID
 - Whether QB Time free trial includes the Approvals Add-On
