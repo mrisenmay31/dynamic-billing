@@ -238,10 +238,19 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 - All 5 screens render against DB data
 
 ### What does NOT exist yet
-- No QB Time or QBO API integration (M2)
-- No OAuth flows (M2)
+- No QB Time OAuth flow (M2b — needs QB Time account)
+- No polling/timesheet pull (M2b)
 - No worker process
 - M1 acceptance criterion met: auth confirmed working end-to-end on Vercel
+- M2a acceptance criterion met: QBO OAuth confirmed working locally (2026-06-02)
+
+#### M2a confirmed working (2026-06-02)
+- QBO OAuth flow connects end-to-end in local dev
+- Tokens stored encrypted in `qbo_connections` table
+- Settings UI shows live Connected/Not Connected state
+- Local dev login: password auth added to login page (`devpassword123`); magic link still available
+- Redirect URLs registered in Intuit Developer portal: `http://localhost:3000/api/auth/qbo/callback`
+- Supabase allowed redirect URL added: `http://localhost:3000/api/auth/callback`
 
 ---
 
