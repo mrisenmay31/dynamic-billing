@@ -244,49 +244,71 @@ All display surfaces (Billing Math Summary, Invoice Preview, card header, stats,
 
 ---
 
-### M2 development strategy — decision tree for next session
+### M2 development strategy
 
-At the start of the next session, check whether Lea Ann Sanford has responded
-with QBO and QB Time credentials.
+M2 is split into two independent tracks. M2a starts immediately. M2b slots in
+when a QB Time account is available. M3-M6 are not blocked by M2b.
 
-**If Lea Ann HAS provided access:**
-- Skip QB Time free trial setup entirely
-- Verify QBO accountant invite and QB Time admin access work
-- Log her duplicate customer list
-- Confirm QB Time Approvals Add-On status
-- Begin M2 against her real credentials
+#### What has a sandbox vs. what doesn't
 
-**If Lea Ann has NOT yet provided access:**
-Proceed with sandbox + free trial build. The full system can be built through M6
-without her credentials. When she provides access it becomes a credential swap,
-not a build dependency.
+**QBO -- sandbox exists and is already provisioned (M0).**
+The Intuit Developer sandbox at developer.intuit.com is ready. All QBO OAuth work
+(M2a) and invoice creation testing (M6) happen here. Before starting M2a, open
+the sandbox QBO UI and create a service item named exactly `Hourly Accounting
+services` -- or verify one exists -- and note its Item ID. Required for the M6
+invoice ItemRef lookup.
 
-QBO (sandbox — already provisioned):
-- Open the Intuit Developer sandbox QBO UI
-- Find or create a service item named exactly `Hourly Accounting services`
-- Note its internal QBO Item ID — required for the M6 invoice line item ItemRef lookup
+**QB Time -- no sandbox exists. Confirmed.**
+QB Time has no developer sandbox environment. The QBO Intuit Developer sandbox
+does not include QB Time. The official QB Time API docs list "Sign up for a free
+trial" as the explicit first step for developers. A real QB Time account is
+required to build or test the QB Time integration.
 
-QB Time (free trial — needs setup before M2b):
-- Sign up for a QB Time free trial account
-- Create 3 jobcodes named exactly: `Knoxville Title Agency LLC`, `Baine & Company`,
-  `Knox Physical Therapy` (matches seeded customers in the database)
-- Add at least one test employee and log time entries against each jobcode
-- Enable the QB Time API Add-On (Feature Add-ons → API → Add a new application)
-  and note the OAuth client ID and secret
+#### QB Time account -- two options (use whichever comes first)
 
-Build order:
-  M2a — QBO OAuth flow + token storage + refresh (sandbox)
-  M2b — QB Time OAuth flow + polling + timesheet pull (free trial)
-  M3  — Customer mapping UI + jobcode-to-customer table (free trial jobcodes)
-  M4  — Billing run engine + cron scaffold (seeded DB data)
-  M5  — Review queue DB wiring + approval actions (seeded DB data)
-  M6  — QBO invoice creation + bulk send + idempotency (sandbox QBO)
-  --  — Swap to Lea Ann's real credentials when available
-  M7  — UAT against real data
+**Option A -- Lea Ann provides QB Time access:**
+Use her real account. Skip free trial entirely. Confirm Approvals Add-On status.
+Build M2b against her live account. Cleanest path.
 
-Open question before M2 starts: confirm in the Intuit Developer portal whether
-the QBO sandbox app and QB Time free trial app can share one OAuth app registration
-or require separate ones. This affects token storage structure in M2.
+**Option B -- QB Time 30-day free trial:**
+Matt is comfortable setting this up. Current signup process (verified May 2026):
+requires an existing QBO account and a credit card with a $1 pre-authorization
+hold. Trial can be cancelled any time; if left to expire the account stays active
+but reports/exports are disabled. Steps once inside:
+1. Create 3 jobcodes named exactly: `Knoxville Title Agency LLC`,
+   `Baine & Company`, `Knox Physical Therapy` (matches seeded DB customers)
+2. Add at least one test employee and log time entries against each jobcode
+3. Feature Add-ons → API → Add a new application; note OAuth client ID and secret
+4. When Lea Ann's real access arrives, swap credentials
+
+Option B is a parallel track, not a blocker. Start M2a immediately regardless.
+
+#### Build order from M2 onward
+
+| Step | What | Data source | Blocked by |
+|---|---|---|---|
+| M2a | QBO OAuth flow + token storage + refresh | Intuit Developer sandbox | Nothing -- start now |
+| M2b | QB Time OAuth flow + polling + timesheet pull | Lea Ann OR free trial | QB Time account |
+| M3 | Customer mapping UI + jobcode-to-customer table | Seeded DB data | M2a only |
+| M4 | Billing run engine + cron scaffold | Seeded DB data | M3 |
+| M5 | Review queue DB wiring + approval actions | Seeded DB data | M4 |
+| M6 | QBO invoice creation + bulk send + idempotency | Sandbox QBO | M5 |
+| -- | Swap to Lea Ann's real credentials | Lea Ann's access | Lea Ann |
+| M7 | UAT | Lea Ann's real data | Real credentials + M6 |
+
+#### QBO access -- no user invite needed from Lea Ann
+
+Confirmed via Intuit docs: Lea Ann does not need to add Matt as any type of QBO
+user. The integration uses OAuth -- she authorizes the app herself as primary
+admin when the time comes (M6/M7). The "accountant can't add another accountant"
+issue she encountered is about QBO user roles, which is irrelevant to OAuth app
+authorization. No action needed from Lea Ann on QBO until the app is ready to
+connect.
+
+**Open question before M2a starts:** Confirm in the Intuit Developer portal
+whether QBO sandbox and QB Time use one shared OAuth app registration or require
+separate ones. This affects token storage structure. Check before Claude Code
+begins M2.
 
 ---
 
