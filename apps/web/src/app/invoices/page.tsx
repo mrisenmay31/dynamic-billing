@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getQboConnectionStatus } from '@/lib/qbo/connection'
 import InvoicesClient from './InvoicesClient'
 import type { InvoicesClientProps } from './InvoicesClient'
 
@@ -95,5 +96,7 @@ export default async function InvoicesPage() {
     }))
   )
 
-  return <InvoicesClient templates={templates} allEntries={allEntries} defaultRate={defaultRate} />
+  const { connected: qboConnected } = await getQboConnectionStatus(FIRM_ID)
+
+  return <InvoicesClient templates={templates} allEntries={allEntries} defaultRate={defaultRate} qboConnected={qboConnected} />
 }

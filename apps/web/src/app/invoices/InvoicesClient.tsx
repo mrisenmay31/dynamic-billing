@@ -105,6 +105,7 @@ export interface InvoicesClientProps {
   templates: InvoiceTemplate[];
   allEntries: FlatEntry[];
   defaultRate: number;
+  qboConnected: boolean;
 }
 
 // Kept for reference during type-checking; real data comes from props.
@@ -1526,7 +1527,7 @@ function ClientRulesView({
 }
 
 /* ─── Settings view ──────────────────────────────────────────── */
-function SettingsView() {
+function SettingsView({ qboConnected }: { qboConnected: boolean }) {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="px-8 py-6 space-y-6 max-w-4xl">
@@ -1556,9 +1557,24 @@ function SettingsView() {
               <span className="text-sm text-gray-500 shrink-0">Invoice destination</span>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <span className="text-sm text-gray-800">QuickBooks Online</span>
-                <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
-                  Ready to Connect
-                </span>
+                {qboConnected ? (
+                  <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#DCFCE7", color: "#166534" }}>
+                    Connected
+                  </span>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
+                      Not Connected
+                    </span>
+                    <a
+                      href="/api/auth/qbo/connect"
+                      className="inline-flex items-center text-xs font-medium px-3 py-1 rounded-md text-white"
+                      style={{ backgroundColor: "#2D6A4F" }}
+                    >
+                      Connect
+                    </a>
+                  </>
+                )}
                 <span className="text-xs text-gray-400">Draft invoices only</span>
               </div>
             </div>
@@ -1690,7 +1706,7 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, defaultRate }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected }: InvoicesClientProps) {
   const [activeView, setActiveView] = useState<NavView>("billing-run");
   const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
     Object.fromEntries(templates.map((t) => [t.id, false]))
@@ -1788,7 +1804,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate }: I
             templates={templates}
           />
         )}
-        {activeView === "settings" && <SettingsView />}
+        {activeView === "settings" && <SettingsView qboConnected={qboConnected} />}
       </div>
     </div>
   );
