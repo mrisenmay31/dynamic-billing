@@ -4,6 +4,7 @@ import { getQboConnectionStatus } from '@/lib/qbo/connection'
 import InvoicesClient from './InvoicesClient'
 import type { InvoicesClientProps } from './InvoicesClient'
 
+
 const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const DEFAULT_RATE = 125
 
@@ -43,10 +44,9 @@ export default async function InvoicesPage() {
     .from('billing_runs')
     .select('id')
     .eq('firm_id', FIRM_ID)
-    .eq('billing_month', '2026-04-01')
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   const { data: drafts } = await supabase
     .from('invoice_drafts')
@@ -98,5 +98,23 @@ export default async function InvoicesPage() {
 
   const { connected: qboConnected } = await getQboConnectionStatus(FIRM_ID)
 
-  return <InvoicesClient templates={templates} allEntries={allEntries} defaultRate={defaultRate} qboConnected={qboConnected} />
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('id, display_name, qbo_customer_id')
+    .eq('firm_id', FIRM_ID)
+    .order('display_name')
+
+  return (
+    <InvoicesClient
+      templates={templates}
+      allEntries={allEntries}
+      defaultRate={defaultRate}
+      qboConnected={qboConnected}
+      customers={(customers ?? []).map((c) => ({
+        id: c.id,
+        displayName: c.display_name,
+        qboCustomerId: c.qbo_customer_id ?? null,
+      }))}
+    />
+  )
 }

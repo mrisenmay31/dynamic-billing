@@ -12,6 +12,11 @@ import {
   X,
   ChevronDown,
   ArrowUpDown,
+  Link2,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Lock,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -60,7 +65,7 @@ interface Toast {
   message: string;
 }
 
-type NavView = "billing-run" | "invoice-queue" | "time-entries" | "client-rules" | "settings";
+type NavView = "billing-run" | "invoice-queue" | "time-entries" | "client-rules" | "client-mapping" | "settings";
 
 /* ─── Utilities ──────────────────────────────────────────────── */
 function ceilToQuarterHour(totalMinutes: number): number {
@@ -101,11 +106,23 @@ function durationToAmount(duration: string, rate: number): number {
 }
 
 /* ─── Client props (data comes from server component via page.tsx) ─── */
+export interface DbCustomer {
+  id: string;
+  displayName: string;
+  qboCustomerId: string | null;
+}
+
+export interface QboCustomer {
+  id: string;
+  displayName: string;
+}
+
 export interface InvoicesClientProps {
   templates: InvoiceTemplate[];
   allEntries: FlatEntry[];
   defaultRate: number;
   qboConnected: boolean;
+  customers: DbCustomer[];
 }
 
 // Kept for reference during type-checking; real data comes from props.
@@ -250,6 +267,7 @@ const NAV_ITEMS: { view: NavView; label: string; Icon: React.ElementType }[] = [
   { view: "invoice-queue", label: "Invoice Queue", Icon: FileText },
   { view: "time-entries", label: "All Time Entries", Icon: Clock },
   { view: "client-rules", label: "Client Rules", Icon: Settings2 },
+  { view: "client-mapping", label: "Client Mapping", Icon: Link2 },
   { view: "settings", label: "Settings", Icon: Settings },
 ];
 
@@ -257,7 +275,7 @@ const NAV_ITEMS: { view: NavView; label: string; Icon: React.ElementType }[] = [
 const STATUS_CONFIG: Record<InvoiceStatus, { label: string; bg: string; color: string }> = {
   needs_review: { label: "Needs Review", bg: "#FFF3E0", color: "#C2410C" },
   ready_to_draft: { label: "Ready to Draft", bg: "#F1F5F9", color: "#475569" },
-  draft_created: { label: "Draft Created in QBO", bg: "#D8F3DC", color: "#2D6A4F" },
+  draft_created: { label: "Sent", bg: "#D8F3DC", color: "#2D6A4F" },
 };
 
 /* ─── Sub-components ─────────────────────────────────────────── */
@@ -488,6 +506,7 @@ function InvoiceQueueView({
   invoiceStates: states,
   updateInvoiceState: updateState,
   templates,
+  onGenerate,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
@@ -498,6 +517,7 @@ function InvoiceQueueView({
   invoiceStates: Record<string, InvoiceState>;
   updateInvoiceState: (id: string, update: Partial<InvoiceState>) => void;
   templates: InvoiceTemplate[];
+  onGenerate: () => Promise<void>;
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -517,7 +537,7 @@ function InvoiceQueueView({
 
   function createDraft(id: string) {
     updateState(id, { status: "draft_created", expanded: false });
-    addToast("Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent.");
+    addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
   }
 
   function handleStatusChange(id: string, newStatus: InvoiceStatus) {
@@ -532,19 +552,24 @@ function InvoiceQueueView({
     const targets = templates.filter((t) => !isDone(t.id));
     targets.forEach((t) => updateState(t.id, { status: "draft_created", expanded: false }));
     if (targets.length === 1) {
-      addToast("Draft created in QuickBooks. BillerGenie will handle payment portal sync after invoice is sent.");
+      addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
     } else {
-      addToast(`${targets.length} drafts created in QuickBooks.`);
+      addToast(`${targets.length} invoices sent to clients.`);
     }
   }
 
-  function handleGenerate() {
+  async function handleGenerate() {
     if (generating) return;
     setGenerating(true);
-    setTimeout(() => {
+    try {
+      await onGenerate();
+      addToast("Billing drafts generated. Review invoices below.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate drafts";
+      addToast(message);
+    } finally {
       setGenerating(false);
-      addToast("April 2026 time entries imported from QuickBooks Time. Review drafts below.");
-    }, 1400);
+    }
   }
 
   const focusHandlers = inputFocusHandlers();
@@ -966,7 +991,7 @@ function InvoiceQueueView({
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          Create QuickBooks Draft
+                          Approve &amp; Send Invoice
                         </button>
                       </div>
 
@@ -1009,8 +1034,8 @@ function InvoiceQueueView({
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
             <span className="flex flex-col items-start">
-              <span>Create all QBO drafts</span>
-              <span className="text-xs opacity-60 font-normal">Sends to QuickBooks Online</span>
+              <span>Send All Approved Invoices</span>
+              <span className="text-xs opacity-60 font-normal">Creates and sends via QuickBooks Online</span>
             </span>
           </button>
         </div>
@@ -1526,6 +1551,283 @@ function ClientRulesView({
   );
 }
 
+/* ─── Client Mapping view ────────────────────────────────────── */
+function ClientMappingView({
+  initialCustomers,
+  qboConnected,
+}: {
+  initialCustomers: DbCustomer[];
+  qboConnected: boolean;
+}) {
+  const [customers, setCustomers] = useState<DbCustomer[]>(initialCustomers);
+  const [qboCustomers, setQboCustomers] = useState<QboCustomer[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const [pendingSelections, setPendingSelections] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/customers/sync-qbo", { method: "POST" });
+      const text = await res.text();
+      let json: Record<string, unknown>;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error(text.slice(0, 200) || `Server error ${res.status}`);
+      }
+      if (!res.ok) throw new Error((json.error as string) ?? "Sync failed");
+      const fetchedQboCustomers = (json.qboCustomers as QboCustomer[]) ?? [];
+      const fetchedCustomers = (json.customers as { id: string; display_name: string; qbo_customer_id: string | null }[]) ?? [];
+      const matched = (json.autoMatched as number) ?? 0;
+      setQboCustomers(fetchedQboCustomers);
+      setCustomers(
+        fetchedCustomers.map((c) => ({
+          id: c.id,
+          displayName: c.display_name,
+          qboCustomerId: c.qbo_customer_id ?? null,
+        }))
+      );
+      setSyncMessage({
+        text: matched > 0
+          ? `Synced ${fetchedQboCustomers.length} QBO customers — ${matched} auto-matched by name.`
+          : `Synced ${fetchedQboCustomers.length} QBO customers. Review matches below.`,
+        ok: true,
+      });
+    } catch (err) {
+      setSyncMessage({ text: (err as Error).message, ok: false });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleSave(customerId: string) {
+    const qboId = pendingSelections[customerId];
+    if (!qboId) return;
+    setSavingId(customerId);
+    try {
+      const res = await fetch(`/api/customers/${customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qbo_customer_id: qboId }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === customerId ? { ...c, qboCustomerId: qboId } : c))
+      );
+      setPendingSelections((prev) => {
+        const next = { ...prev };
+        delete next[customerId];
+        return next;
+      });
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  const qboMap = Object.fromEntries(qboCustomers.map((q) => [q.id, q.displayName]));
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="px-8 py-6 space-y-6 max-w-4xl">
+
+        {/* Header */}
+        <div>
+          <h1 className="font-display text-2xl text-gray-900">Client Mapping</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Link your billing clients to QuickBooks Online customers and QB Time jobcodes.
+          </p>
+        </div>
+
+        {/* Panel A: QBO Customer Links */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">QuickBooks Online — Customer Links</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Each billing client must be linked to a QBO customer so invoices are created in the right account.
+              </p>
+            </div>
+            <button
+              onClick={handleSync}
+              disabled={syncing || !qboConnected}
+              className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#2D6A4F", color: "white" }}
+            >
+              <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Syncing…" : "Sync from QuickBooks Online"}
+            </button>
+          </div>
+
+          {!qboConnected && (
+            <div className="flex items-start gap-3 px-6 py-4 bg-amber-50 border-b border-amber-100">
+              <AlertCircle size={16} className="text-amber-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-amber-700">
+                QuickBooks Online is not connected. Connect it in{" "}
+                <button
+                  className="underline font-medium"
+                  onClick={() => {}}
+                >
+                  Settings
+                </button>{" "}
+                to sync customers.
+              </p>
+            </div>
+          )}
+
+          {syncMessage && (
+            <div
+              className="flex items-start gap-3 px-6 py-3 border-b text-sm"
+              style={{
+                backgroundColor: syncMessage.ok ? "#F0FDF4" : "#FEF2F2",
+                borderColor: syncMessage.ok ? "#BBF7D0" : "#FECACA",
+                color: syncMessage.ok ? "#166534" : "#991B1B",
+              }}
+            >
+              {syncMessage.ok
+                ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
+                : <AlertCircle size={15} className="mt-0.5 shrink-0" />}
+              {syncMessage.text}
+            </div>
+          )}
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">QBO Customer</th>
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {customers.map((customer) => {
+                const linked = customer.qboCustomerId;
+                const pending = pendingSelections[customer.id];
+                const hasPending = pending !== undefined && pending !== (customer.qboCustomerId ?? "");
+
+                return (
+                  <tr key={customer.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-3.5 font-medium text-gray-900">{customer.displayName}</td>
+                    <td className="px-6 py-3.5">
+                      {qboCustomers.length > 0 ? (
+                        <select
+                          value={pending ?? customer.qboCustomerId ?? ""}
+                          onChange={(e) =>
+                            setPendingSelections((prev) => ({ ...prev, [customer.id]: e.target.value }))
+                          }
+                          className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-600/20 focus:border-green-600 w-full max-w-xs"
+                        >
+                          <option value="">— select QBO customer —</option>
+                          {qboCustomers.map((q) => (
+                            <option key={q.id} value={q.id}>{q.displayName}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-gray-400 text-sm">
+                          {linked ? qboMap[linked] ?? linked : "—"}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-3.5">
+                      {linked ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}
+                        >
+                          <CheckCircle2 size={11} />
+                          Linked
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: "#FFF3E0", color: "#C2410C" }}
+                        >
+                          <AlertCircle size={11} />
+                          Unlinked
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-3.5 text-right">
+                      {hasPending && (
+                        <button
+                          onClick={() => handleSave(customer.id)}
+                          disabled={savingId === customer.id}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                          style={{ backgroundColor: "#2D6A4F", color: "white" }}
+                        >
+                          {savingId === customer.id ? "Saving…" : "Save"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {qboCustomers.length === 0 && (
+            <div className="px-6 py-4 text-xs text-gray-400 border-t border-gray-100">
+              Click &quot;Sync from QuickBooks Online&quot; to load customers and enable dropdown matching.
+            </div>
+          )}
+        </div>
+
+        {/* Panel B: QB Time Jobcodes */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">QB Time — Jobcode Mapping</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Each QB Time jobcode must map to a billing client so time entries are routed correctly.
+            </p>
+          </div>
+
+          <div className="flex items-start gap-3 px-6 py-4 bg-slate-50 border-b border-slate-100">
+            <Lock size={15} className="text-slate-400 mt-0.5 shrink-0" />
+            <p className="text-sm text-slate-500">
+              QB Time is not connected yet. Once connected, jobcodes will be imported here for mapping.
+              Connect QB Time in Settings when your account is ready.
+            </p>
+          </div>
+
+          <table className="w-full text-sm opacity-40 pointer-events-none select-none">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">QB Time Jobcode</th>
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Maps To (Client)</th>
+                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {[
+                "Knoxville Title Agency LLC",
+                "Baine & Company",
+                "Knox Physical Therapy",
+              ].map((name) => (
+                <tr key={name}>
+                  <td className="px-6 py-3.5 font-mono text-xs text-gray-500">{name}</td>
+                  <td className="px-6 py-3.5 text-gray-400">—</td>
+                  <td className="px-6 py-3.5">
+                    <span
+                      className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: "#F1F5F9", color: "#64748B" }}
+                    >
+                      Pending
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 /* ─── Settings view ──────────────────────────────────────────── */
 function SettingsView({ qboConnected }: { qboConnected: boolean }) {
   return (
@@ -1679,7 +1981,7 @@ function SettingsView({ qboConnected }: { qboConnected: boolean }) {
             <p>Pilot client: Lea Ann Sanford, Owner</p>
             <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
               <p className="text-sm text-gray-500 leading-relaxed">
-                This prototype uses real April 2026 data from QuickBooks Time. No backend, no API connections, no live QuickBooks integration. All invoice actions simulate the real workflow — when the product is live, &quot;Create QuickBooks Draft&quot; will POST directly to the QBO Invoice API.
+                This prototype uses real April 2026 data from QuickBooks Time. No backend, no API connections, no live QuickBooks integration. All invoice actions simulate the real workflow — when the product is live, &quot;Approve &amp; Send Invoice&quot; will create and send the invoice directly via the QBO API in one step.
               </p>
               <p className="font-mono text-xs text-gray-500">
                 3 clients · 88 time entries · $6,968.75 in proposed billing
@@ -1706,7 +2008,7 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, customers }: InvoicesClientProps) {
   const [activeView, setActiveView] = useState<NavView>("billing-run");
   const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
     Object.fromEntries(templates.map((t) => [t.id, false]))
@@ -1745,6 +2047,19 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
   );
   function updateInvoiceState(id: string, update: Partial<InvoiceState>) {
     setInvoiceStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
+  }
+
+  async function handleGenerate() {
+    const res = await fetch('/api/billing-runs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billingMonth: '2026-04-01' }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? 'Failed to generate drafts');
+    }
+    window.location.href = '/invoices';
   }
 
   return (
@@ -1787,6 +2102,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
             invoiceStates={invoiceStates}
             updateInvoiceState={updateInvoiceState}
             templates={templates}
+            onGenerate={handleGenerate}
           />
         )}
         {activeView === "billing-run" && <BillingRunDashboard invoiceStates={invoiceStates} templates={templates} />}
@@ -1803,6 +2119,9 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
             setClientRate={setClientRate}
             templates={templates}
           />
+        )}
+        {activeView === "client-mapping" && (
+          <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} />
         )}
         {activeView === "settings" && <SettingsView qboConnected={qboConnected} />}
       </div>
