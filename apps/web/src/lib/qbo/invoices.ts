@@ -6,8 +6,36 @@ function qboBase(): string {
     : 'https://sandbox-quickbooks.api.intuit.com'
 }
 
-export async function fetchQboItemId(firmId: string, itemName: string): Promise<string> {
+async function fetchIncomeAccountRef(
+  accessToken: string,
+  realmId: string
+): Promise<{ value: string; name: string }> {
+  const query = encodeURIComponent("SELECT * FROM Account WHERE AccountType = 'Income' MAXRESULTS 1")
+  const url = `${qboBase()}/v3/company/${realmId}/query?query=${query}&minorversion=75`
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`QBO account query failed ${res.status}: ${text}`)
+  }
+
+  const data = await res.json() as { QueryResponse?: { Account?: { Id: string; Name: string }[] } }
+  const accounts = data.QueryResponse?.Account ?? []
+
+  if (accounts.length === 0) {
+    throw new Error('No income accounts found in QBO — cannot create service item')
+  }
+
+  return { value: accounts[0].Id, name: accounts[0].Name }
+}
+
+export async function fetchOrCreateQboItemId(firmId: string, itemName: string): Promise<string> {
   const { accessToken, realmId } = await getValidQboToken(firmId)
+
+  // Look for existing item by name
   const query = encodeURIComponent(`SELECT * FROM Item WHERE Name = '${itemName}'`)
   const url = `${qboBase()}/v3/company/${realmId}/query?query=${query}&minorversion=75`
 
@@ -21,15 +49,36 @@ export async function fetchQboItemId(firmId: string, itemName: string): Promise<
   }
 
   const data = await res.json() as { QueryResponse?: { Item?: { Id: string }[] } }
-  const items = data.QueryResponse?.Item ?? []
+  const existing = data.QueryResponse?.Item ?? []
 
-  if (items.length === 0) {
-    throw new Error(
-      `QBO item '${itemName}' not found — verify the product/service name in QBO`
-    )
+  if (existing.length > 0) {
+    return existing[0].Id
   }
 
-  return items[0].Id
+  // Item not found — create it
+  const incomeAccount = await fetchIncomeAccountRef(accessToken, realmId)
+
+  const createRes = await fetch(`${qboBase()}/v3/company/${realmId}/item?minorversion=75`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      Name: itemName,
+      Type: 'Service',
+      IncomeAccountRef: incomeAccount,
+    }),
+  })
+
+  if (!createRes.ok) {
+    const text = await createRes.text()
+    throw new Error(`QBO item creation failed ${createRes.status}: ${text}`)
+  }
+
+  const created = await createRes.json() as { Item: { Id: string } }
+  return created.Item.Id
 }
 
 export interface CreateInvoiceParams {

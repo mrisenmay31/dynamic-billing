@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
-import { fetchQboItemId, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
+import { fetchOrCreateQboItemId, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
 
 const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
@@ -80,10 +80,10 @@ export async function POST(
   const dueDate = new Date(billingDate.getTime() + 5 * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10)
 
-  // Look up QBO item ID by name
+  // Look up QBO item ID by name, creating it if it doesn't exist
   let itemId: string
   try {
-    itemId = await fetchQboItemId(FIRM_ID, QBO_ITEM_NAME)
+    itemId = await fetchOrCreateQboItemId(FIRM_ID, QBO_ITEM_NAME)
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 422 })
   }
