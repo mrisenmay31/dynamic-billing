@@ -6,7 +6,7 @@ import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
 import { fetchQboItemId, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
 
 const FIRM_ID = '00000000-0000-0000-0000-000000000001'
-const QBO_ITEM_NAME = 'Hourly Accounting services'
+const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
 
 export async function POST(
   req: NextRequest,
