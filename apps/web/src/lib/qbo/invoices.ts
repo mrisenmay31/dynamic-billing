@@ -143,9 +143,34 @@ export async function createQboInvoice(params: CreateInvoiceParams): Promise<Qbo
   }
 }
 
-export async function sendQboInvoice(firmId: string, invoiceId: string): Promise<void> {
+export async function fetchQboCustomerEmail(
+  firmId: string,
+  qboCustomerId: string
+): Promise<string | null> {
   const { accessToken, realmId } = await getValidQboToken(firmId)
-  const url = `${qboBase()}/v3/company/${realmId}/invoice/${invoiceId}/send?minorversion=75`
+  const url = `${qboBase()}/v3/company/${realmId}/customer/${qboCustomerId}?minorversion=75`
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`QBO customer fetch failed ${res.status}: ${text}`)
+  }
+
+  const data = await res.json() as { Customer?: { PrimaryEmailAddr?: { Address?: string } } }
+  return data.Customer?.PrimaryEmailAddr?.Address ?? null
+}
+
+export async function sendQboInvoice(
+  firmId: string,
+  invoiceId: string,
+  sendTo: string
+): Promise<void> {
+  const { accessToken, realmId } = await getValidQboToken(firmId)
+  const params = new URLSearchParams({ sendTo, minorversion: '75' })
+  const url = `${qboBase()}/v3/company/${realmId}/invoice/${invoiceId}/send?${params}`
 
   const res = await fetch(url, {
     method: 'POST',

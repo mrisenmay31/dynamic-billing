@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
-import { fetchOrCreateQboItemId, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
+import { fetchOrCreateQboItemId, fetchQboCustomerEmail, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
 
 const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
@@ -105,9 +105,35 @@ export async function POST(
     return NextResponse.json({ error: (err as Error).message }, { status: 502 })
   }
 
+  // Fetch customer email from QBO — required for the send call
+  let customerEmail: string | null
+  try {
+    customerEmail = await fetchQboCustomerEmail(FIRM_ID, customer.qbo_customer_id)
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 502 })
+  }
+
+  if (!customerEmail) {
+    await adminClient.from('invoice_drafts').update({
+      qbo_invoice_id: invoiceResult.invoiceId,
+      qbo_invoice_number: invoiceResult.invoiceNumber,
+      status: 'error',
+      last_error: `No email address for "${customer.display_name}" in QBO — add one to the customer record before sending invoices`,
+      rounded_hours: finalHours,
+      description: finalDescription,
+      total_amount: finalAmount,
+      updated_at: new Date().toISOString(),
+    }).eq('id', id)
+
+    return NextResponse.json(
+      { error: `No email address for "${customer.display_name}" in QBO — add one to the customer record before sending invoices` },
+      { status: 422 }
+    )
+  }
+
   // Send invoice via QBO — if this fails, preserve the invoice ID so we can track it
   try {
-    await sendQboInvoice(FIRM_ID, invoiceResult.invoiceId)
+    await sendQboInvoice(FIRM_ID, invoiceResult.invoiceId, customerEmail)
   } catch (err) {
     await adminClient.from('invoice_drafts').update({
       qbo_invoice_id: invoiceResult.invoiceId,
