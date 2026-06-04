@@ -192,6 +192,13 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - `qbo_write_enabled = true` on firm row (set 2026-06-04)
 - Customer mappings: 3 DB customers linked to sandbox QBO customer IDs (manual match, sandbox names don't match real names)
 - Vercel env vars required: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_ENVIRONMENT=sandbox`, `INTUIT_REDIRECT_URI=https://dynamic-billing.vercel.app/api/auth/qbo/callback`
+- **⚠️ Sandbox test invoices** — invoices 1038/1039/1040 exist in QBO sandbox from M6 testing (2026-06-04); not a problem, just FYI
+
+### Pre-production checklist (before connecting Lea Ann's real account)
+- **Remove `QBO_ITEM_NAME` env var from Vercel** — was set to `Hours` for sandbox testing; must be deleted before production so the default `Hourly Accounting services` is used. Leaving it in will create invoices with the wrong line item name.
+- **Change `INTUIT_ENVIRONMENT` to `production`** in Vercel env vars
+- **M2b (QB Time OAuth)** must be completed before real time data can flow — still blocked pending a QB Time developer account
+- **Lea Ann must authorize both OAuth flows** — QBO connect (M2a flow already works) and QB Time connect (M2b, not yet built)
 
 ### Calculation logic
 ```
