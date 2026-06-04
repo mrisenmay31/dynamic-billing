@@ -69,6 +69,7 @@ export default async function InvoicesPage() {
 
     return {
       id: draft.customer_id,
+      draftId: draft.id,
       client: customer.display_name,
       invoiceNum: draft.qbo_invoice_number ?? '',
       rawMinutes,

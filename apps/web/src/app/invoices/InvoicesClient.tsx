@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   LayoutDashboard,
   FileText,
@@ -31,6 +31,7 @@ interface TimeEntry {
 
 interface InvoiceTemplate {
   id: string;
+  draftId: string;
   client: string;
   billTo?: string;
   invoiceNum: string;
@@ -129,6 +130,7 @@ export interface InvoicesClientProps {
 const TEMPLATES: InvoiceTemplate[] = [
   {
     id: "knoxville-title",
+    draftId: "",
     client: "Knoxville Title Agency LLC",
     billTo: "Chase Reno",
     invoiceNum: "5141",
@@ -191,6 +193,7 @@ const TEMPLATES: InvoiceTemplate[] = [
   },
   {
     id: "baine",
+    draftId: "",
     client: "Baine & Company",
     invoiceNum: "5101",
     rawMinutes: 713,
@@ -211,6 +214,7 @@ const TEMPLATES: InvoiceTemplate[] = [
   },
   {
     id: "knox-pt",
+    draftId: "",
     client: "Knox Physical Therapy",
     invoiceNum: "5138",
     rawMinutes: 708,
@@ -521,6 +525,9 @@ function InvoiceQueueView({
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [sendingAll, setSendingAll] = useState(false);
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const isDone = (id: string) => states[id].status === "draft_created";
 
@@ -535,9 +542,47 @@ function InvoiceQueueView({
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }
 
-  function createDraft(id: string) {
-    updateState(id, { status: "draft_created", expanded: false });
-    addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
+  function debouncedPatch(draftId: string, body: { rounded_hours?: number; description?: string }) {
+    clearTimeout(debounceTimers.current[draftId]);
+    debounceTimers.current[draftId] = setTimeout(() => {
+      fetch(`/api/invoice-drafts/${draftId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch((err) => console.error("[invoice-drafts] debounced PATCH failed", err));
+    }, 700);
+  }
+
+  async function createDraft(id: string) {
+    const template = templates.find((t) => t.id === id);
+    if (!template) return;
+    clearTimeout(debounceTimers.current[template.draftId]);
+    setSavingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`/api/invoice-drafts/${template.draftId}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rounded_hours: states[id].hours,
+          description: sharedDescriptions[id],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error ?? "Failed to send invoice");
+      }
+      if ((data as { alreadySent?: boolean }).alreadySent) {
+        updateState(id, { status: "draft_created", expanded: false });
+        addToast("Invoice was already sent.");
+        return;
+      }
+      updateState(id, { status: "draft_created", expanded: false });
+      addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Failed to send invoice");
+    } finally {
+      setSavingIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
+    }
   }
 
   function handleStatusChange(id: string, newStatus: InvoiceStatus) {
@@ -548,13 +593,39 @@ function InvoiceQueueView({
     }
   }
 
-  function createAllDrafts() {
+  async function createAllDrafts() {
     const targets = templates.filter((t) => !isDone(t.id));
-    targets.forEach((t) => updateState(t.id, { status: "draft_created", expanded: false }));
-    if (targets.length === 1) {
-      addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
-    } else {
-      addToast(`${targets.length} invoices sent to clients.`);
+    if (targets.length === 0) return;
+    targets.forEach((t) => clearTimeout(debounceTimers.current[t.draftId]));
+    setSendingAll(true);
+    try {
+      const ids = await Promise.all(
+        targets.map(async (t) => {
+          const res = await fetch(`/api/invoice-drafts/${t.draftId}/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              rounded_hours: states[t.id].hours,
+              description: sharedDescriptions[t.id],
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error ?? `Failed for ${t.client}`);
+          }
+          return t.id;
+        })
+      );
+      ids.forEach((id) => updateState(id, { status: "draft_created", expanded: false }));
+      if (targets.length === 1) {
+        addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
+      } else {
+        addToast(`${targets.length} invoices sent to clients.`);
+      }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Failed to send invoices");
+    } finally {
+      setSendingAll(false);
     }
   }
 
@@ -851,7 +922,11 @@ function InvoiceQueueView({
                                   <button
                                     key={label}
                                     type="button"
-                                    onClick={() => updateState(template.id, { hours: parseFloat((state.hours + delta).toFixed(2)) })}
+                                    onClick={() => {
+                                      const newHours = parseFloat((state.hours + delta).toFixed(2));
+                                      updateState(template.id, { hours: newHours });
+                                      debouncedPatch(template.draftId, { rounded_hours: newHours });
+                                    }}
                                     className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
                                     style={{ borderColor: "#d1fae5", color: "#374151" }}
                                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#2D6A4F"; e.currentTarget.style.color = "#2D6A4F"; }}
@@ -880,7 +955,10 @@ function InvoiceQueueView({
                           <label className="block text-xs font-medium text-gray-600 mb-1.5">Client-facing description</label>
                           <textarea
                             value={description}
-                            onChange={(e) => setDescription(template.id, e.target.value)}
+                            onChange={(e) => {
+                              setDescription(template.id, e.target.value);
+                              debouncedPatch(template.draftId, { description: e.target.value });
+                            }}
                             rows={2}
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 resize-none focus:outline-none transition-shadow"
                             {...focusHandlers}
@@ -898,7 +976,10 @@ function InvoiceQueueView({
                                 value={state.hours}
                                 onChange={(e) => {
                                   const val = parseFloat(e.target.value);
-                                  if (!isNaN(val) && val >= 0) updateState(template.id, { hours: val });
+                                  if (!isNaN(val) && val >= 0) {
+                                    updateState(template.id, { hours: val });
+                                    debouncedPatch(template.draftId, { rounded_hours: val });
+                                  }
                                 }}
                                 step={0.25}
                                 min={0}
@@ -916,7 +997,11 @@ function InvoiceQueueView({
                                 value={manualAdj}
                                 onChange={(e) => {
                                   const val = parseFloat(e.target.value);
-                                  if (!isNaN(val)) updateState(template.id, { hours: parseFloat((roundedHours + val).toFixed(2)) });
+                                  if (!isNaN(val)) {
+                                    const newHours = parseFloat((roundedHours + val).toFixed(2));
+                                    updateState(template.id, { hours: newHours });
+                                    debouncedPatch(template.draftId, { rounded_hours: newHours });
+                                  }
                                 }}
                                 step={0.25}
                                 className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 focus:outline-none transition-shadow"
@@ -983,15 +1068,28 @@ function InvoiceQueueView({
                         </div>
                         <button
                           onClick={() => createDraft(template.id)}
-                          className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors"
+                          disabled={savingIds.has(template.id)}
+                          className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                           style={{ backgroundColor: "#2D6A4F" }}
-                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#40916C"; }}
+                          onMouseEnter={(e) => { if (!savingIds.has(template.id)) e.currentTarget.style.backgroundColor = "#40916C"; }}
                           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
                         >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Approve &amp; Send Invoice
+                          {savingIds.has(template.id) ? (
+                            <>
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              Saving…
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              Approve &amp; Send Invoice
+                            </>
+                          )}
                         </button>
                       </div>
 
@@ -1024,19 +1122,31 @@ function InvoiceQueueView({
           </div>
           <button
             onClick={createAllDrafts}
-            disabled={pendingTemplates.length === 0}
+            disabled={pendingTemplates.length === 0 || sendingAll}
             className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ backgroundColor: pendingTemplates.length > 0 ? "#2D6A4F" : "#9ca3af" }}
-            onMouseEnter={(e) => { if (pendingTemplates.length > 0) e.currentTarget.style.backgroundColor = "#40916C"; }}
+            onMouseEnter={(e) => { if (pendingTemplates.length > 0 && !sendingAll) e.currentTarget.style.backgroundColor = "#40916C"; }}
             onMouseLeave={(e) => { if (pendingTemplates.length > 0) e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            <span className="flex flex-col items-start">
-              <span>Send All Approved Invoices</span>
-              <span className="text-xs opacity-60 font-normal">Creates and sends via QuickBooks Online</span>
-            </span>
+            {sendingAll ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Sending…</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="flex flex-col items-start">
+                  <span>Send All Approved Invoices</span>
+                  <span className="text-xs opacity-60 font-normal">Creates and sends via QuickBooks Online</span>
+                </span>
+              </>
+            )}
           </button>
         </div>
       </div>
