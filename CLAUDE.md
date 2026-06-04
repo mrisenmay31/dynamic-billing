@@ -186,11 +186,12 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - **`page.tsx`** — now queries latest billing run dynamically (no hardcoded month)
 - **RLS bug fixed** — `firm_users` policy had infinite recursion (`select firm_id from firm_users` inside its own policy); fixed to `user_id = auth.uid()`. This was silently blocking all authenticated DB reads.
 
-### QBO connection (local dev, sandbox)
+### QBO connection (sandbox + Vercel)
 - Connected: sandbox realm `9341456547194357`
 - Tokens stored encrypted in `qbo_connections` table
-- `qbo_write_enabled = false` on firm row — must set to `true` before M6 writes
+- `qbo_write_enabled = true` on firm row (set 2026-06-04)
 - Customer mappings: 3 DB customers linked to sandbox QBO customer IDs (manual match, sandbox names don't match real names)
+- Vercel env vars required: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_ENVIRONMENT=sandbox`, `INTUIT_REDIRECT_URI=https://dynamic-billing.vercel.app/api/auth/qbo/callback`
 
 ### Calculation logic
 ```
@@ -210,24 +211,23 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 
 ---
 
-## M5 — Review Queue DB Wiring (next milestone)
+### M5 — what was built (2026-06-04)
+- **`PATCH /api/invoice-drafts/[id]`** — updates `invoice_drafts`: accepts `{ status, rounded_hours, description }`. Recalculates `total_amount` server-side when hours change.
+- **"Approve & Send Invoice" button** — calls send endpoint, shows spinner while saving, collapses card on success
+- **Debounced PATCH (700ms)** — hours and description edits persist to DB automatically; all input paths covered (direct input, manual adj, +0.25/+0.50/+0.75 buttons)
+- **"Send All Approved Invoices"** — fires all send calls in parallel via Promise.all
 
-**Goal:** Make the "Approve & Send Invoice" button do real work — update `invoice_drafts` status in the DB. M6 will add the actual QBO send; M5 wires the DB side.
+### M6 — what was built (2026-06-04)
+- **`src/lib/qbo/invoices.ts`** — `fetchOrCreateQboItemId` (looks up item by name, creates Service item linked to first income account if not found), `fetchQboCustomerEmail` (reads PrimaryEmailAddr from QBO customer), `createQboInvoice`, `sendQboInvoice`
+- **`POST /api/invoice-drafts/[id]/send`** — atomic send: idempotency check → write guard → customer email fetch → item lookup/create → QBO invoice create → QBO send → DB write (`qbo_invoice_id`, `qbo_invoice_number`, `sent_at`, `status=sent`)
+- **`GET /api/qbo/items`** — debug endpoint to list QBO product/service names (keep for troubleshooting)
+- Invoice date logic: `billing_month + 1 month = TxnDate`; DueDate = TxnDate + 5 days
+- Idempotency: checks `qbo_invoice_id` first; generates + persists `qbo_idempotency_key` before any QBO call
+- On send failure after successful create: saves `qbo_invoice_id` + sets `status=error` so orphaned invoice is trackable
+- **Confirmed working in QBO sandbox** (2026-06-04) — invoices 1038/1039/1040 created and sent
 
-### What M5 builds
-1. **`PATCH /api/invoice-drafts/[id]`** — updates `invoice_drafts` row: accepts `{ status, rounded_hours, description }`. Used for approve, edit hours, edit description.
-2. **Wire "Approve & Send Invoice" button** — currently fires a fake toast; M5 calls the PATCH endpoint, sets status to `approved`, updates the card UI.
-3. **Wire hours/description edits** — edits made in the review card should persist to the DB (debounced PATCH).
-4. **Wire "Send All Approved Invoices"** — bulk PATCH for all pending drafts in the run.
-
-### What M5 does NOT build
-- No QBO API calls (M6)
-- No actual invoice sending
-
-### M5 acceptance criteria
-- Clicking "Approve & Send Invoice" updates the draft's status in DB to `approved`
-- Edited hours/description persist across page reloads
-- "Send All" marks all pending drafts approved
+### Known gap — auto-create QBO customer (post-M6 backlog)
+If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send currently fails with a clear error. The fix: at send time, if `qbo_customer_id` is null, create the customer in QBO using `display_name`, save the new ID back to `customers.qbo_customer_id`, and proceed. Same pattern as item auto-create. Not blocking for pilot (Lea Ann's clients already exist in QBO), but needed before onboarding new firms.
 
 ---
 
@@ -239,8 +239,8 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 | M2b ⏳ | QB Time OAuth + polling + timesheet pull | QB Time account |
 | M3 ✅ | Customer mapping UI + QBO customer sync | M2a |
 | M4 ✅ | Billing run engine + Generate Drafts wiring | M3 |
-| **M5** | Review queue DB wiring + approve/send actions | M4 |
-| M6 | QBO invoice create + send + idempotency | M5 |
+| M5 ✅ | Review queue DB wiring + approve/send actions | M4 |
+| M6 ✅ | QBO invoice create + send + idempotency | M5 |
 | — | Swap to Lea Ann's real credentials | Lea Ann |
 | M7 | UAT | Real credentials + M6 |
 
