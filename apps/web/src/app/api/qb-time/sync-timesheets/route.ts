@@ -86,6 +86,17 @@ async function fetchTimesheets(
   return { timesheets: allTimesheets, users: allUsers, jobcodes: allJobcodes }
 }
 
+// Returns an ISO string for midnight Eastern Time on a YYYY-MM-DD date,
+// correctly handling EDT (-04:00) vs EST (-05:00) based on the actual offset
+// at noon UTC that day (safely away from any DST boundary at 2am).
+function toEasternMidnightISO(dateStr: string): string {
+  const noonUtc = new Date(`${dateStr}T12:00:00Z`)
+  const offsetStr = noonUtc
+    .toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'longOffset' })
+    .match(/GMT([+-]\d{2}:\d{2})/)?.[1] ?? '-05:00'
+  return `${dateStr}T00:00:00${offsetStr}`
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -125,14 +136,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     for (const ts of timesheets) {
       try {
-        if (!ts.start) {
-          console.error(`[sync-timesheets] entry ${ts.id} has no start time — skipping`)
-          skipped++
-          continue
-        }
-
         const jc = jobcodes[String(ts.jobcode_id)]
         const customerId = jobcodeToCustomer.get(String(ts.jobcode_id)) ?? null
+
+        // Clock-in/clock-out entries have a real start timestamp; duration-based
+        // entries have null/invalid start — fall back to midnight Eastern on ts.date.
+        const startedAt =
+          ts.start && !Number.isNaN(new Date(ts.start).getTime())
+            ? ts.start
+            : toEasternMidnightISO(ts.date)
 
         const staffUser = users[String(ts.user_id)]
         const staffName = staffUser
@@ -149,7 +161,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               qb_time_jobcode_id: String(ts.jobcode_id),
               qb_time_jobcode_name: jc?.name ?? null,
               staff_name: staffName,
-              started_at: ts.start,
+              started_at: startedAt,
               duration_seconds: ts.duration,
               is_billable: true,
               notes: ts.notes || null,
