@@ -124,40 +124,50 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     for (const ts of timesheets) {
-      const jc = jobcodes[String(ts.jobcode_id)]
-      const customerId = jobcodeToCustomer.get(String(ts.jobcode_id)) ?? null
-      const startedAtTs = new Date(ts.start).toISOString()
+      try {
+        if (!ts.start) {
+          console.error(`[sync-timesheets] entry ${ts.id} has no start time — skipping`)
+          skipped++
+          continue
+        }
 
-      const staffUser = users[String(ts.user_id)]
-      const staffName = staffUser
-        ? `${staffUser.first_name} ${staffUser.last_name}`.trim()
-        : null
+        const jc = jobcodes[String(ts.jobcode_id)]
+        const customerId = jobcodeToCustomer.get(String(ts.jobcode_id)) ?? null
 
-      const { error } = await adminClient
-        .from('time_entries')
-        .upsert(
-          {
-            firm_id: FIRM_ID,
-            customer_id: customerId,
-            qb_time_entry_id: String(ts.id),
-            qb_time_jobcode_id: String(ts.jobcode_id),
-            qb_time_jobcode_name: jc?.name ?? null,
-            staff_name: staffName,
-            started_at: startedAtTs,
-            duration_seconds: ts.duration,
-            is_billable: true,
-            notes: ts.notes || null,
-            source_payload: ts as unknown as import('@/types/supabase').Json,
-            imported_at: new Date().toISOString(),
-          },
-          { onConflict: 'firm_id,qb_time_entry_id' }
-        )
+        const staffUser = users[String(ts.user_id)]
+        const staffName = staffUser
+          ? `${staffUser.first_name} ${staffUser.last_name}`.trim()
+          : null
 
-      if (error) {
-        console.error('[sync-timesheets] upsert error:', error.message)
+        const { error } = await adminClient
+          .from('time_entries')
+          .upsert(
+            {
+              firm_id: FIRM_ID,
+              customer_id: customerId,
+              qb_time_entry_id: String(ts.id),
+              qb_time_jobcode_id: String(ts.jobcode_id),
+              qb_time_jobcode_name: jc?.name ?? null,
+              staff_name: staffName,
+              started_at: ts.start,
+              duration_seconds: ts.duration,
+              is_billable: true,
+              notes: ts.notes || null,
+              source_payload: ts as unknown as import('@/types/supabase').Json,
+              imported_at: new Date().toISOString(),
+            },
+            { onConflict: 'firm_id,qb_time_entry_id' }
+          )
+
+        if (error) {
+          console.error(`[sync-timesheets] upsert error for entry ${ts.id}:`, error.message)
+          skipped++
+        } else {
+          upserted++
+        }
+      } catch (entryErr) {
+        console.error(`[sync-timesheets] unexpected error processing entry ${ts.id}:`, entryErr)
         skipped++
-      } else {
-        upserted++
       }
     }
 
@@ -177,8 +187,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({ processed: timesheets.length, upserted, skipped })
   } catch (err) {
-    const message = (err as Error).message ?? 'Unknown error'
-    console.error('[sync-timesheets]', err)
+    const error = err as Error
+    const message = error.message ?? 'Unknown error'
+    console.error('[sync-timesheets] fatal error:', error.stack ?? error)
 
     await adminClient.from('integration_sync_logs').insert({
       firm_id: FIRM_ID,
