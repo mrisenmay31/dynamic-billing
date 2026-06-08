@@ -111,6 +111,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const token = await getValidQbTimeToken(FIRM_ID)
     const { timesheets, users, jobcodes } = await fetchTimesheets(token, start_date, end_date)
 
+    // DEBUG: log raw API response shape
+    console.log('[DEBUG sync-timesheets] total timesheets fetched:', timesheets.length)
+    console.log('[DEBUG sync-timesheets] supplemental jobcodes:', JSON.stringify(jobcodes, null, 2))
+    console.log('[DEBUG sync-timesheets] first 3 raw timesheets:', JSON.stringify(timesheets.slice(0, 3), null, 2))
+
     // Load customer mappings for jobcode → customer_id lookup
     const { data: mappings } = await adminClient
       .from('customer_mappings')
@@ -123,11 +128,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       jobcodeToCustomer.set(m.qb_time_source_id, m.customer_id)
     }
 
+    // DEBUG: collected per-entry skip reasons for response
+    const debugEntries: object[] = []
+
     for (const ts of timesheets) {
       const jc = jobcodes[String(ts.jobcode_id)]
 
       // Filter non-billable entries client-side (jobcode must have billable=true if available)
       if (jc && jc.billable === false) {
+        const reason = `jobcode billable=false (jc.id=${jc.id}, jc.name="${jc.name}")`
+        console.log(`[DEBUG sync-timesheets] SKIP ts.id=${ts.id} jobcode_id=${ts.jobcode_id} reason: ${reason}`)
+        debugEntries.push({ ts_id: ts.id, jobcode_id: ts.jobcode_id, jc_found: true, jc_billable: jc.billable, skip_reason: reason })
         skipped++
         continue
       }
@@ -163,9 +174,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         )
 
       if (error) {
-        console.error('[sync-timesheets] upsert error:', error.message)
+        const reason = `upsert error: ${error.message}`
+        console.error(`[DEBUG sync-timesheets] SKIP ts.id=${ts.id} jobcode_id=${ts.jobcode_id} reason: ${reason}`)
+        debugEntries.push({ ts_id: ts.id, jobcode_id: ts.jobcode_id, jc_found: !!jc, jc_billable: jc?.billable ?? null, skip_reason: reason })
         skipped++
       } else {
+        console.log(`[DEBUG sync-timesheets] UPSERTED ts.id=${ts.id} jobcode_id=${ts.jobcode_id} customer_id=${customerId}`)
+        debugEntries.push({ ts_id: ts.id, jobcode_id: ts.jobcode_id, jc_found: !!jc, jc_billable: jc?.billable ?? null, skip_reason: null })
         upserted++
       }
     }
@@ -184,7 +199,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       error_details: { start_date, end_date },
     })
 
-    return NextResponse.json({ processed: timesheets.length, upserted, skipped })
+    return NextResponse.json({
+      processed: timesheets.length,
+      upserted,
+      skipped,
+      debug: {
+        supplemental_jobcodes: jobcodes,
+        first_3_timesheets: timesheets.slice(0, 3),
+        per_entry: debugEntries,
+      },
+    })
   } catch (err) {
     const message = (err as Error).message ?? 'Unknown error'
     console.error('[sync-timesheets]', err)
