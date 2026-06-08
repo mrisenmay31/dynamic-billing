@@ -123,6 +123,8 @@ export interface InvoicesClientProps {
   allEntries: FlatEntry[];
   defaultRate: number;
   qboConnected: boolean;
+  qbTimeConnected: boolean;
+  qbTimeConnectedAt: string | null;
   customers: DbCustomer[];
 }
 
@@ -1939,7 +1941,12 @@ function ClientMappingView({
 }
 
 /* ─── Settings view ──────────────────────────────────────────── */
-function SettingsView({ qboConnected }: { qboConnected: boolean }) {
+function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow }: {
+  qboConnected: boolean
+  qbTimeConnected: boolean
+  qbTimeConnectedAt: string | null
+  onSyncNow: () => void
+}) {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="px-8 py-6 space-y-6 max-w-4xl">
@@ -1957,11 +1964,42 @@ function SettingsView({ qboConnected }: { qboConnected: boolean }) {
           </div>
           <div className="divide-y divide-gray-100">
 
-            <div className="flex items-start justify-between px-6 py-4 gap-6">
-              <span className="text-sm text-gray-500 shrink-0">QBO Time import source</span>
-              <div className="text-right">
-                <p className="text-sm text-gray-800">Uploaded report</p>
-                <p className="text-xs text-gray-400 mt-0.5">Future: QuickBooks Time API</p>
+            <div className="flex items-center justify-between px-6 py-4 gap-6">
+              <span className="text-sm text-gray-500 shrink-0">Time import source</span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-sm text-gray-800">QuickBooks Time</span>
+                {qbTimeConnected ? (
+                  <>
+                    <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#DCFCE7", color: "#166534" }}>
+                      Connected
+                    </span>
+                    {qbTimeConnectedAt && (
+                      <span className="text-xs text-gray-400">
+                        since {new Date(qbTimeConnectedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                    <button
+                      onClick={onSyncNow}
+                      className="inline-flex items-center text-xs font-medium px-3 py-1 rounded-md text-white"
+                      style={{ backgroundColor: "#2D6A4F" }}
+                    >
+                      Sync Now
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
+                      Not Connected
+                    </span>
+                    <a
+                      href="/api/auth/qb-time/connect"
+                      className="inline-flex items-center text-xs font-medium px-3 py-1 rounded-md text-white"
+                      style={{ backgroundColor: "#2D6A4F" }}
+                    >
+                      Connect QB Time
+                    </a>
+                  </>
+                )}
               </div>
             </div>
 
@@ -2118,7 +2156,7 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, customers }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers }: InvoicesClientProps) {
   const [activeView, setActiveView] = useState<NavView>("billing-run");
   const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
     Object.fromEntries(templates.map((t) => [t.id, false]))
@@ -2130,6 +2168,24 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
   const [sharedClientRates, setSharedClientRates] = useState<Record<string, number>>(
     Object.fromEntries(templates.map((t) => [t.id, defaultRate]))
   );
+
+  async function handleSyncNow() {
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
+    try {
+      const res = await fetch('/api/qb-time/sync-timesheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: start, end_date: end }),
+      })
+      const data = await res.json() as { upserted?: number; error?: string }
+      if (!res.ok) alert(`Sync failed: ${data.error ?? 'Unknown error'}`)
+      else alert(`Sync complete — ${data.upserted ?? 0} entries imported.`)
+    } catch {
+      alert('Sync request failed. Check console for details.')
+    }
+  }
 
   function setHighTouch(id: string, val: boolean) {
     setSharedHighTouch((prev) => ({ ...prev, [id]: val }));
@@ -2233,7 +2289,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
         {activeView === "client-mapping" && (
           <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} />
         )}
-        {activeView === "settings" && <SettingsView qboConnected={qboConnected} />}
+        {activeView === "settings" && <SettingsView qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} qbTimeConnectedAt={qbTimeConnectedAt} onSyncNow={handleSyncNow} />}
       </div>
     </div>
   );

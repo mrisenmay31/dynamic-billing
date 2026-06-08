@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getQboConnectionStatus } from '@/lib/qbo/connection'
+import { getQbTimeConnectionStatus } from '@/lib/qb-time/auth'
 import InvoicesClient from './InvoicesClient'
 import type { InvoicesClientProps } from './InvoicesClient'
 
@@ -97,7 +98,10 @@ export default async function InvoicesPage() {
     }))
   )
 
-  const { connected: qboConnected } = await getQboConnectionStatus(FIRM_ID)
+  const [{ connected: qboConnected }, { connected: qbTimeConnected, connectedAt: qbTimeConnectedAt }] = await Promise.all([
+    getQboConnectionStatus(FIRM_ID),
+    getQbTimeConnectionStatus(FIRM_ID),
+  ])
 
   const { data: customers } = await supabase
     .from('customers')
@@ -111,6 +115,8 @@ export default async function InvoicesPage() {
       allEntries={allEntries}
       defaultRate={defaultRate}
       qboConnected={qboConnected}
+      qbTimeConnected={qbTimeConnected}
+      qbTimeConnectedAt={qbTimeConnectedAt}
       customers={(customers ?? []).map((c) => ({
         id: c.id,
         displayName: c.display_name,
