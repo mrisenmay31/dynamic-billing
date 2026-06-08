@@ -112,14 +112,14 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ---
 
-## Current Code Status (as of 2026-06-03)
+## Current Code Status (as of 2026-06-08)
 
 ### Milestone summary
 | Milestone | Status | Confirmed |
 |---|---|---|
 | M1 — Auth, Supabase, seed data | ✅ Complete | 2026-05-25 |
 | M2a — QBO OAuth + token storage | ✅ Complete | 2026-06-02 |
-| M2b — QB Time OAuth + polling | ⏳ Blocked (needs QB Time account) | — |
+| M2b — QB Time OAuth + polling | ✅ Complete | 2026-06-08 |
 | M3 — Customer mapping UI | ✅ Complete | 2026-06-02 |
 | M4 — Billing run engine | ✅ Complete | 2026-06-03 |
 | M5 — Review queue DB wiring | 🔲 Next | — |
@@ -162,7 +162,7 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 2. **Invoice Queue** — per-client review cards with billing math, invoice preview, time entries, adjustment controls; "Approve & Send Invoice" button per card; "Send All Approved Invoices" bulk action
 3. **All Time Entries** — filterable flat table of all 88 April 2026 entries
 4. **Client Rules** — firm-wide defaults + per-client overrides (rate, description, high-touch flag)
-5. **Client Mapping** — QBO customer sync + manual match UI; QB Time jobcode panel (scaffolded, awaiting M2b)
+5. **Client Mapping** — QBO customer sync + manual match UI; QB Time jobcode panel (scaffolded; M2b live but jobcode-to-customer linking UI not yet wired)
 6. **Settings** — integration status, billing behavior config
 
 ### Invoice Queue button labels (updated 2026-06-02)
@@ -194,11 +194,24 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - Vercel env vars required: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_ENVIRONMENT=sandbox`, `INTUIT_REDIRECT_URI=https://dynamic-billing.vercel.app/api/auth/qbo/callback`
 - **⚠️ Sandbox test invoices** — invoices 1038/1039/1040 exist in QBO sandbox from M6 testing (2026-06-04); not a problem, just FYI
 
+### QB Time connection (test account + Vercel)
+- Test account: CTA Integrity LLC
+- 3 test jobcodes: Knoxville Title Agency LLC (255802204), Baine & Company (255802360), Knox Physical Therapy (255802522)
+- 9 June 2026 test entries seeded: 8 duration-based (no start/end timestamps), 1 clock-in/clock-out
+- Tokens stored encrypted in `qb_time_connections` table
+- Vercel env vars required: `QB_TIME_CLIENT_ID`, `QB_TIME_CLIENT_SECRET`, `QB_TIME_REDIRECT_URI=https://dynamic-billing.vercel.app/api/auth/qb-time/callback`
+- Connect flow: Settings page → "Connect QB Time" → `/api/auth/qb-time/connect` → QB Time OAuth → callback stores tokens
+
+### QB Time — critical implementation notes
+- **Token endpoint uses POST body auth** — `client_id` and `client_secret` go in the POST body, NOT as HTTP Basic Auth (unlike QBO). See `src/lib/qb-time/auth.ts`.
+- **Jobcode `billable` flag is always `false`** — The `billable` field on the QB Time jobcode API object is a firm-level setting that defaults to `false` regardless of what the UI shows. Do NOT filter on it. The customer mapping is the correct billable gate: if a timesheet's `jobcode_id` maps to a customer, it's billable.
+- **Duration-based vs clock-in/clock-out entries** — QB Time supports two entry types. Clock-in/clock-out entries have real `start`/`end` timestamps. Duration-based entries (manually entered hours) have `null` or empty `start`/`end` — only `date` (YYYY-MM-DD) and `duration` are meaningful. The `sync-timesheets` route handles both: uses `ts.start` if valid, falls back to midnight Eastern on `ts.date` if not.
+- **`started_at` timezone** — Eastern Time (`America/New_York`) for billing month attribution. The `toEasternMidnightISO()` helper in `sync-timesheets/route.ts` reads the Intl offset at noon UTC to correctly resolve EDT (-04:00) vs EST (-05:00).
+
 ### Pre-production checklist (before connecting Lea Ann's real account)
 - **Remove `QBO_ITEM_NAME` env var from Vercel** — was set to `Hours` for sandbox testing; must be deleted before production so the default `Hourly Accounting services` is used. Leaving it in will create invoices with the wrong line item name.
 - **Change `INTUIT_ENVIRONMENT` to `production`** in Vercel env vars
-- **M2b (QB Time OAuth)** must be completed before real time data can flow — still blocked pending a QB Time developer account
-- **Lea Ann must authorize both OAuth flows** — QBO connect (M2a flow already works) and QB Time connect (M2b, not yet built)
+- **Lea Ann must authorize both OAuth flows** — QBO connect (M2a) and QB Time connect (M2b, Settings page → "Connect QB Time")
 
 ### Calculation logic
 ```
@@ -233,6 +246,15 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 - On send failure after successful create: saves `qbo_invoice_id` + sets `status=error` so orphaned invoice is trackable
 - **Confirmed working in QBO sandbox** (2026-06-04) — invoices 1038/1039/1040 created and sent
 
+### M2b — what was built (2026-06-08)
+- **`src/lib/qb-time/auth.ts`** — QB Time OAuth helpers: `getAuthorizationUrl`, `exchangeCodeForTokens`, `refreshQbTimeTokens`, `saveQbTimeConnection`, `getValidQbTimeToken` (auto-refresh 5 min before expiry), `getQbTimeConnectionStatus`
+- **`GET /api/auth/qb-time/connect`** — initiates OAuth with CSRF state cookie
+- **`GET /api/auth/qb-time/callback`** — exchanges code for tokens, stores encrypted in `qb_time_connections`, redirects to `/invoices?connected=qb_time`
+- **`POST /api/qb-time/sync-jobcodes`** — fetches all active jobcodes, auto-matches to DB customers by name, inserts new mappings (never overwrites existing `customer_id`), logs to `integration_sync_logs`
+- **`POST /api/qb-time/sync-timesheets`** — accepts `{start_date, end_date}`, fetches with `supplemental_data=yes` for user names + jobcode names, upserts on `(firm_id, qb_time_entry_id)` (idempotent), handles both clock-in/clock-out and duration-based entry types, per-entry errors are non-fatal, logs to `integration_sync_logs`
+- **Settings page** — QB Time connection row: Connected badge + date, "Connect QB Time" button, "Sync Now" button (syncs current calendar month)
+- **`InvoicesClient.tsx`** — added `qbTimeConnected` + `qbTimeConnectedAt` to `InvoicesClientProps`; `page.tsx` fetches both QBO and QB Time status in parallel
+
 ### Known gap — auto-create QBO customer (post-M6 backlog)
 If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send currently fails with a clear error. The fix: at send time, if `qbo_customer_id` is null, create the customer in QBO using `display_name`, save the new ID back to `customers.qbo_customer_id`, and proceed. Same pattern as item auto-create. Not blocking for pilot (Lea Ann's clients already exist in QBO), but needed before onboarding new firms.
 
@@ -243,7 +265,7 @@ If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send curre
 | Step | What | Blocked by |
 |---|---|---|
 | M2a ✅ | QBO OAuth + token storage | — |
-| M2b ⏳ | QB Time OAuth + polling + timesheet pull | QB Time account |
+| M2b ✅ | QB Time OAuth + polling + timesheet pull | — |
 | M3 ✅ | Customer mapping UI + QBO customer sync | M2a |
 | M4 ✅ | Billing run engine + Generate Drafts wiring | M3 |
 | M5 ✅ | Review queue DB wiring + approve/send actions | M4 |
