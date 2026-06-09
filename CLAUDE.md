@@ -215,9 +215,9 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - ✅ `INTUIT_ENVIRONMENT` set to `production` in Vercel
 - ✅ Domain set to `app.clocktobill.com`; Resend sending domain verified on `clocktobill.com`
 - ✅ AES-256-GCM token encryption implemented (replaces base64 stub)
+- ✅ `TOKEN_ENCRYPTION_KEY` generated and added to Vercel env vars
 
 **Still outstanding:**
-- **Generate `TOKEN_ENCRYPTION_KEY`** — run `openssl rand -hex 32`, add to Vercel env vars before UAT
 - **Lea Ann must authorize both OAuth flows** — QBO connect (Settings → Connect QBO) and QB Time connect (Settings → Connect QB Time)
 - **Confirm `"Hourly Accounting services"` item exists** in Lea Ann's real QBO (system will auto-create if missing, but confirm)
 - **Invite Lea Ann** via magic link (creates her auth user)
