@@ -112,7 +112,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ---
 
-## Current Code Status (as of 2026-06-08)
+## Current Code Status (as of 2026-06-09)
 
 ### Milestone summary
 | Milestone | Status | Confirmed |
@@ -154,7 +154,9 @@ src/lib/supabase/server.ts    — SSR Supabase client (uses next/headers cookies
 src/lib/supabase/admin.ts     — service role client (bypasses RLS)
 src/lib/crypto/tokens.ts      — AES-256-GCM encrypt/decrypt; requires TOKEN_ENCRYPTION_KEY env var
 src/lib/audit/log.ts          — writes to audit_logs
-src/middleware.ts              — auth guard; passes /login, /api/auth/**, /auth/callback
+src/middleware.ts              — auth guard; passes /login, /api/auth/**, /auth/callback, /privacy, /terms
+src/app/privacy/page.tsx      — static Privacy Policy page (public, no auth required)
+src/app/terms/page.tsx        — static Terms of Service page (public, no auth required)
 ```
 
 ### Nav views in InvoicesClient.tsx
@@ -264,6 +266,14 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 - **`POST /api/qb-time/sync-timesheets`** — accepts `{start_date, end_date}`, fetches with `supplemental_data=yes` for user names + jobcode names, upserts on `(firm_id, qb_time_entry_id)` (idempotent), handles both clock-in/clock-out and duration-based entry types, per-entry errors are non-fatal, logs to `integration_sync_logs`
 - **Settings page** — QB Time connection row: Connected badge + date, "Connect QB Time" button, "Sync Now" button (syncs current calendar month)
 - **`InvoicesClient.tsx`** — added `qbTimeConnected` + `qbTimeConnectedAt` to `InvoicesClientProps`; `page.tsx` fetches both QBO and QB Time status in parallel
+
+### Pre-production hardening — what was built (2026-06-09)
+- **`src/lib/crypto/tokens.ts`** — replaced base64 stub with real AES-256-GCM. Format: `iv:authTag:ciphertext` (hex). Random IV per call. Throws descriptively if `TOKEN_ENCRYPTION_KEY` missing or malformed. `TOKEN_ENCRYPTION_KEY` added to Vercel.
+- **Domain rename** — all code/doc references updated from `dynamic-billing.vercel.app` to `app.clocktobill.com`
+- **`src/app/privacy/page.tsx`** — static Privacy Policy; publicly accessible without auth; contact email `support@ctaintegrity.com`
+- **`src/app/terms/page.tsx`** — static Terms of Service (EULA); publicly accessible without auth; contact email `support@ctaintegrity.com`
+- **`src/middleware.ts`** — added `/privacy` and `/terms` to public routes (no redirect to `/login`)
+- Both legal pages required for Intuit App Assessment Questionnaire submission; live at `https://app.clocktobill.com/privacy` and `https://app.clocktobill.com/terms`
 
 ### Known gap — auto-create QBO customer (post-M6 backlog)
 If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send currently fails with a clear error. The fix: at send time, if `qbo_customer_id` is null, create the customer in QBO using `display_name`, save the new ID back to `customers.qbo_customer_id`, and proceed. Same pattern as item auto-create. Not blocking for pilot (Lea Ann's clients already exist in QBO), but needed before onboarding new firms.
