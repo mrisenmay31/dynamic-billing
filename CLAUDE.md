@@ -122,14 +122,14 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 | M2b — QB Time OAuth + polling | ✅ Complete | 2026-06-08 |
 | M3 — Customer mapping UI | ✅ Complete | 2026-06-02 |
 | M4 — Billing run engine | ✅ Complete | 2026-06-03 |
-| M5 — Review queue DB wiring | 🔲 Next | — |
-| M6 — QBO invoice send | 🔲 Pending M5 | — |
-| M7 — UAT with Lea Ann | 🔲 Pending real credentials | — |
+| M5 — Review queue DB wiring | ✅ Complete | 2026-06-04 |
+| M6 — QBO invoice send | ✅ Complete | 2026-06-04 |
+| M7 — UAT with Lea Ann | 🔲 Next | Pending pre-production checklist |
 
 ### Tech stack
 - **`apps/web/`** — Next.js 15, TypeScript, Tailwind v4, App Router, `lucide-react`
 - **Supabase** — project ref `vvmfbtvxsjeyrmsqodon`, region `us-east-1`
-- **Deployed:** `https://dynamic-billing.vercel.app` (auto-deploys from `main`)
+- **Deployed:** `https://app.clocktobill.com` (auto-deploys from `main`)
 - **GitHub:** `github.com/mrisenmay31/dynamic-billing` (private, `mrisenmay31`)
 
 ### Key source files
@@ -152,7 +152,7 @@ src/lib/qbo/write-guard.ts    — throws if qbo_write_enabled = false
 src/lib/supabase/client.ts    — browser Supabase client
 src/lib/supabase/server.ts    — SSR Supabase client (uses next/headers cookies)
 src/lib/supabase/admin.ts     — service role client (bypasses RLS)
-src/lib/crypto/tokens.ts      — encrypt/decrypt stubs (base64 for now; real crypto in M2 hardening)
+src/lib/crypto/tokens.ts      — AES-256-GCM encrypt/decrypt; requires TOKEN_ENCRYPTION_KEY env var
 src/lib/audit/log.ts          — writes to audit_logs
 src/middleware.ts              — auth guard; passes /login, /api/auth/**, /auth/callback
 ```
@@ -191,7 +191,7 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - Tokens stored encrypted in `qbo_connections` table
 - `qbo_write_enabled = true` on firm row (set 2026-06-04)
 - Customer mappings: 3 DB customers linked to sandbox QBO customer IDs (manual match, sandbox names don't match real names)
-- Vercel env vars required: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_ENVIRONMENT=sandbox`, `INTUIT_REDIRECT_URI=https://dynamic-billing.vercel.app/api/auth/qbo/callback`
+- Vercel env vars required: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_ENVIRONMENT=production`, `INTUIT_REDIRECT_URI=https://app.clocktobill.com/api/auth/qbo/callback`
 - **⚠️ Sandbox test invoices** — invoices 1038/1039/1040 exist in QBO sandbox from M6 testing (2026-06-04); not a problem, just FYI
 
 ### QB Time connection (test account + Vercel)
@@ -199,7 +199,7 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - 3 test jobcodes: Knoxville Title Agency LLC (255802204), Baine & Company (255802360), Knox Physical Therapy (255802522)
 - 9 June 2026 test entries seeded: 8 duration-based (no start/end timestamps), 1 clock-in/clock-out
 - Tokens stored encrypted in `qb_time_connections` table
-- Vercel env vars required: `QB_TIME_CLIENT_ID`, `QB_TIME_CLIENT_SECRET`, `QB_TIME_REDIRECT_URI=https://dynamic-billing.vercel.app/api/auth/qb-time/callback`
+- Vercel env vars required: `QB_TIME_CLIENT_ID`, `QB_TIME_CLIENT_SECRET`, `QB_TIME_REDIRECT_URI=https://app.clocktobill.com/api/auth/qb-time/callback`
 - Connect flow: Settings page → "Connect QB Time" → `/api/auth/qb-time/connect` → QB Time OAuth → callback stores tokens
 
 ### QB Time — critical implementation notes
@@ -209,9 +209,19 @@ src/middleware.ts              — auth guard; passes /login, /api/auth/**, /aut
 - **`started_at` timezone** — Eastern Time (`America/New_York`) for billing month attribution. The `toEasternMidnightISO()` helper in `sync-timesheets/route.ts` reads the Intl offset at noon UTC to correctly resolve EDT (-04:00) vs EST (-05:00).
 
 ### Pre-production checklist (before connecting Lea Ann's real account)
-- **Remove `QBO_ITEM_NAME` env var from Vercel** — was set to `Hours` for sandbox testing; must be deleted before production so the default `Hourly Accounting services` is used. Leaving it in will create invoices with the wrong line item name.
-- **Change `INTUIT_ENVIRONMENT` to `production`** in Vercel env vars
-- **Lea Ann must authorize both OAuth flows** — QBO connect (M2a) and QB Time connect (M2b, Settings page → "Connect QB Time")
+
+**Done:**
+- ✅ `QBO_ITEM_NAME` env var removed from Vercel
+- ✅ `INTUIT_ENVIRONMENT` set to `production` in Vercel
+- ✅ Domain set to `app.clocktobill.com`; Resend sending domain verified on `clocktobill.com`
+- ✅ AES-256-GCM token encryption implemented (replaces base64 stub)
+
+**Still outstanding:**
+- **Generate `TOKEN_ENCRYPTION_KEY`** — run `openssl rand -hex 32`, add to Vercel env vars before UAT
+- **Lea Ann must authorize both OAuth flows** — QBO connect (Settings → Connect QBO) and QB Time connect (Settings → Connect QB Time)
+- **Confirm `"Hourly Accounting services"` item exists** in Lea Ann's real QBO (system will auto-create if missing, but confirm)
+- **Invite Lea Ann** via magic link (creates her auth user)
+- **Obtain known-duplicate customer list from Lea Ann** before M7 (some clients may have duplicate QBO entries)
 
 ### Calculation logic
 ```
@@ -281,7 +291,7 @@ M2b slots in parallel at any point — does not block M4–M6.
 - Root Directory: `apps/web`
 - Framework: Next.js, Output: default (`.next`)
 - Auto-deploys from `main` via GitHub integration
-- Required env vars: all from `apps/web/.env.local.example` plus `NEXT_PUBLIC_APP_URL=https://dynamic-billing.vercel.app`
+- Required env vars: all from `apps/web/.env.local.example` plus `NEXT_PUBLIC_APP_URL=https://app.clocktobill.com`
 
 ## CLI Commands (run from `apps/web/`)
 - Dev server: `npm run dev`
