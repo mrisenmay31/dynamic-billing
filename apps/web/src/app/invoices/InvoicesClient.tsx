@@ -2138,6 +2138,13 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
           </div>
         </div>
 
+        <p className="text-xs text-gray-400 mt-2">
+          Need help? Contact us at{' '}
+          <a href="mailto:support@ctaintegrity.com" className="underline hover:text-gray-600">
+            support@ctaintegrity.com
+          </a>
+        </p>
+
       </div>
     </div>
   );

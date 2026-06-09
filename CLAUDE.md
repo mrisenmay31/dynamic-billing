@@ -193,7 +193,7 @@ src/app/terms/page.tsx        — static Terms of Service page (public, no auth 
 - Tokens stored encrypted in `qbo_connections` table
 - `qbo_write_enabled = true` on firm row (set 2026-06-04)
 - Customer mappings: 3 DB customers linked to sandbox QBO customer IDs (manual match, sandbox names don't match real names)
-- Vercel env vars required: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_ENVIRONMENT=production`, `INTUIT_REDIRECT_URI=https://app.clocktobill.com/api/auth/qbo/callback`
+- Vercel env vars: `INTUIT_CLIENT_ID`, `INTUIT_CLIENT_SECRET`, `INTUIT_REDIRECT_URI=https://app.clocktobill.com/api/auth/qbo/callback` — all confirmed set with **production credentials** as of 2026-06-09. `INTUIT_ENVIRONMENT=production` confirmed.
 - **⚠️ Sandbox test invoices** — invoices 1038/1039/1040 exist in QBO sandbox from M6 testing (2026-06-04); not a problem, just FYI
 
 ### QB Time connection (test account + Vercel)
@@ -218,6 +218,13 @@ src/app/terms/page.tsx        — static Terms of Service page (public, no auth 
 - ✅ Domain set to `app.clocktobill.com`; Resend sending domain verified on `clocktobill.com`
 - ✅ AES-256-GCM token encryption implemented (replaces base64 stub)
 - ✅ `TOKEN_ENCRYPTION_KEY` generated and added to Vercel env vars
+- ✅ Static Privacy Policy live at https://app.clocktobill.com/privacy
+- ✅ Static Terms of Service (EULA) live at https://app.clocktobill.com/terms
+- ✅ Support contact (support@ctaintegrity.com) added to Settings page
+- ✅ Intuit App Assessment Questionnaire approved June 9
+- ✅ Production QBO Client ID + Secret obtained and in Vercel
+- ✅ `INTUIT_ENVIRONMENT=production` confirmed in Vercel
+- ✅ App redeployed with production credentials
 
 **Still outstanding:**
 - **Lea Ann must authorize both OAuth flows** — QBO connect (Settings → Connect QBO) and QB Time connect (Settings → Connect QB Time)
@@ -277,6 +284,12 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 
 ### Known gap — auto-create QBO customer (post-M6 backlog)
 If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send currently fails with a clear error. The fix: at send time, if `qbo_customer_id` is null, create the customer in QBO using `display_name`, save the new ID back to `customers.qbo_customer_id`, and proceed. Same pattern as item auto-create. Not blocking for pilot (Lea Ann's clients already exist in QBO), but needed before onboarding new firms.
+
+### Known gap — QBO token revocation (post-UAT backlog)
+`src/lib/qbo/oauth.ts` has no revocation endpoint. Current "disconnect" flow only deletes stored tokens from the DB; it does not call `https://developer.api.intuit.com/v2/oauth2/tokens/revoke` to invalidate the token at Intuit. Implement post-UAT. See TODO comment in `src/lib/qbo/oauth.ts`.
+
+### Known gap — capture `intuit_tid` from QBO API responses (post-UAT backlog)
+Every QBO API response includes an `intuit_tid` header — Intuit's trace ID for support escalations. Currently not captured anywhere. Log alongside each QBO API call result in `integration_sync_logs` or `audit_logs`. See TODO comment in `src/lib/qbo/invoices.ts`.
 
 ---
 

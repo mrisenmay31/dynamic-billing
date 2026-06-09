@@ -1,5 +1,8 @@
 const INTUIT_AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2'
 const INTUIT_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
+// TODO: Implement token revocation
+// Endpoint: https://developer.api.intuit.com/v2/oauth2/tokens/revoke
+// Needed for: active QBO disconnect flow (currently disconnect only deletes stored tokens from DB)
 const QBO_SCOPE = 'com.intuit.quickbooks.accounting'
 
 function basicAuthHeader(): string {
