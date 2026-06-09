@@ -145,7 +145,7 @@ export default function TermsPage() {
             <p>
               CTA Integrity, LLC<br />
               Salt Lake City, Utah<br />
-              <a href="mailto:matt@ctaintegrity.com" className="text-blue-600 underline">matt@ctaintegrity.com</a>
+              <a href="mailto:support@ctaintegrity.com" className="text-blue-600 underline">support@ctaintegrity.com</a>
             </p>
           </section>
 

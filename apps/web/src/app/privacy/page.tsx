@@ -25,7 +25,7 @@ export default function PrivacyPage() {
             </p>
             <p className="mt-3">
               By using the Service, you acknowledge that you have read and understood this Policy. Questions
-              or requests may be directed to <a href="mailto:matt@ctaintegrity.com" className="text-blue-600 underline">matt@ctaintegrity.com</a>.
+              or requests may be directed to <a href="mailto:support@ctaintegrity.com" className="text-blue-600 underline">support@ctaintegrity.com</a>.
             </p>
           </section>
 
@@ -94,7 +94,7 @@ export default function PrivacyPage() {
               We retain your data for as long as your firm maintains an active account with the Service.
               Time entries, invoice drafts, and audit logs are retained to support billing history and
               reconciliation. If you discontinue use of the Service, you may request deletion of your data
-              by contacting <a href="mailto:matt@ctaintegrity.com" className="text-blue-600 underline">matt@ctaintegrity.com</a>.
+              by contacting <a href="mailto:support@ctaintegrity.com" className="text-blue-600 underline">support@ctaintegrity.com</a>.
               We will fulfill deletion requests within a reasonable time, subject to any legal obligations
               to retain records.
             </p>
@@ -103,7 +103,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold text-zinc-900 mb-3">7. Your Rights</h2>
             <p>
-              You may contact us at <a href="mailto:matt@ctaintegrity.com" className="text-blue-600 underline">matt@ctaintegrity.com</a> to:
+              You may contact us at <a href="mailto:support@ctaintegrity.com" className="text-blue-600 underline">support@ctaintegrity.com</a> to:
             </p>
             <ul className="list-disc pl-6 mt-3 space-y-2">
               <li>Request access to the personal data we hold about you.</li>
@@ -135,7 +135,7 @@ export default function PrivacyPage() {
             <p>
               CTA Integrity, LLC<br />
               Salt Lake City, Utah<br />
-              <a href="mailto:matt@ctaintegrity.com" className="text-blue-600 underline">matt@ctaintegrity.com</a>
+              <a href="mailto:support@ctaintegrity.com" className="text-blue-600 underline">support@ctaintegrity.com</a>
             </p>
           </section>
 
