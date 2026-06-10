@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clock to Bill — Automated billing for bookkeeping firms</title>
+  <meta name="description" content="Clock to Bill closes the gap between QuickBooks Time and QuickBooks Online. Pull approved time, apply your rounding rules, review the queue, send invoices. 2–3 hours becomes 15 minutes." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green-900: #1B4332;
+      --green-800: #2D6A4F;
+      --green-600: #40916C;
+      --green-400: #52B788;
+      --green-100: #D8F3DC;
+      --green-50:  #F0FAF3;
+      --coral:     #E76F51;
+      --text-primary:   #1A1A1A;
+      --text-secondary: #4A4A4A;
+      --text-muted:     #888;
+      --border:         rgba(0,0,0,0.1);
+      --bg:             #FFFFFF;
+      --bg-surface:     #F7F9F7;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+    }
+
+    html { font-size: 16px; scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      color: var(--text-primary);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* NAV */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+
+    .nav-logo {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.2rem;
+      color: var(--green-800);
+      text-decoration: none;
+      letter-spacing: -0.01em;
+    }
+
+    .nav-logo span {
+      color: var(--coral);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .nav-login {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .nav-login:hover {
+      border-color: var(--green-600);
+      color: var(--green-800);
+    }
+
+    /* MAIN LAYOUT */
+    main {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 0 1.5rem 5rem;
+    }
+
+    /* HERO */
+    .hero {
+      padding: 4rem 0 3rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--green-600);
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 400;
+      line-height: 1.15;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
+      max-width: 560px;
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      color: var(--green-800);
+    }
+
+    .hero-sub {
+      font-size: 1.0625rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      max-width: 520px;
+      margin-bottom: 2rem;
+    }
+
+    .hero-cta {
+      display: inline-block;
+      background: var(--green-800);
+      color: var(--green-100);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      padding: 0.8125rem 1.75rem;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .hero-cta:hover { background: var(--green-600); }
+
+    /* SECTION SHARED */
+    section { padding: 3rem 0; border-bottom: 1px solid var(--border); }
+    section:last-of-type { border-bottom: none; }
+
+    .section-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    /* PROBLEM STEPS */
+    .steps { list-style: none; }
+
+    .steps li {
+      display: flex;
+      gap: 1rem;
+      padding: 0.9375rem 0;
+      border-bottom: 1px solid var(--border);
+      align-items: flex-start;
+    }
+
+    .steps li:first-child { border-top: 1px solid var(--border); }
+
+    .step-marker {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      min-width: 1.5rem;
+      padding-top: 0.125rem;
+    }
+
+    .step-body {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .step-body strong { color: var(--text-primary); font-weight: 500; }
+
+    .callout {
+      margin-top: 1.5rem;
+      background: var(--bg-surface);
+      border-left: 3px solid var(--green-400);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      padding: 1rem 1.25rem;
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    .callout strong { color: var(--text-primary); font-weight: 500; }
+
+    /* HOW IT WORKS */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    .feature {
+      background: var(--bg);
+      padding: 1.375rem 1.5rem;
+    }
+
+    .feature-num {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6875rem;
+      color: var(--green-600);
+      letter-spacing: 0.06em;
+      margin-bottom: 0.625rem;
+    }
+
+    .feature h3 {
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 0.375rem;
+    }
+
+    .feature p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* PROOF */
+    .proof-block {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.75rem 2rem;
+      background: var(--green-50);
+    }
+
+    .proof-quote {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.1875rem;
+      font-weight: 400;
+      line-height: 1.5;
+      color: var(--green-900);
+      margin-bottom: 1rem;
+      font-style: italic;
+    }
+
+    .proof-stat {
+      display: flex;
+      gap: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-number {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.75rem;
+      color: var(--green-800);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.6875rem;
+      letter-spacing: 0.06em;
+      color: var(--green-600);
+      text-transform: uppercase;
+      margin-top: 0.25rem;
+    }
+
+    .proof-attr {
+      font-size: 0.8125rem;
+      color: var(--green-600);
+    }
+
+    /* CTA */
+    .cta-section {
+      text-align: center;
+      padding: 3.5rem 1rem;
+    }
+
+    .cta-section h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.875rem;
+      font-weight: 400;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+      margin-bottom: 0.75rem;
+    }
+
+    .cta-section p {
+      font-size: 1rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+      max-width: 420px;
+      margin: 0 auto 1.75rem;
+    }
+
+    .cta-section a {
+      display: inline-block;
+      background: var(--green-800);
+      color: var(--green-100);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      padding: 0.875rem 2rem;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .cta-section a:hover { background: var(--green-600); }
+
+    .cta-note {
+      display: block;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-top: 0.875rem;
+    }
+
+    /* FOOTER */
+    footer {
+      text-align: center;
+      padding: 2rem 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 520px) {
+      nav { padding: 1rem 1.25rem; }
+      .hero { padding: 2.5rem 0 2rem; }
+      .proof-stat { gap: 1.25rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="/" class="nav-logo">Clock to <span>Bill</span></a>
+    <div class="nav-right">
+      <a href="https://app.clocktobill.com" class="nav-login">Log in</a>
+    </div>
+  </nav>
+
+  <main>
+
+    <div class="hero">
+      <p class="eyebrow">For QuickBooks Time users</p>
+      <h1>Your billing run shouldn't take <em>half a morning.</em></h1>
+      <p class="hero-sub">QuickBooks Time and QuickBooks Online sync for payroll. They don't sync for client billing. Every month, someone on your team is bridging that gap by hand.</p>
+      <a href="https://calendly.com/ctaintegrity/30min" class="hero-cta">Book a discovery call</a>
+    </div>
+
+    <section>
+      <p class="section-label">The current process</p>
+      <ul class="steps">
+        <li>
+          <span class="step-marker">01</span>
+          <span class="step-body">Pull the time report from QBO Time and export it</span>
+        </li>
+        <li>
+          <span class="step-marker">02</span>
+          <span class="step-body">Group entries by client, sum the hours, apply your <strong>rounding rules</strong></span>
+        </li>
+        <li>
+          <span class="step-marker">03</span>
+          <span class="step-body"><strong>Rewrite every description</strong> — staff notes can never reach a client invoice</span>
+        </li>
+        <li>
+          <span class="step-marker">04</span>
+          <span class="step-body">Create invoices in QBO <strong>one by one,</strong> adjust for high-touch clients, send</span>
+        </li>
+        <li>
+          <span class="step-marker">05</span>
+          <span class="step-body">Repeat next month</span>
+        </li>
+      </ul>
+      <div class="callout">
+        For a firm billing 100+ clients a month, that's <strong>2 to 3 hours of data entry</strong> — at your own billable rate — just to invoice for work already done.
+      </div>
+    </section>
+
+    <section>
+      <p class="section-label">How Clock to Bill works</p>
+      <div class="feature-grid">
+        <div class="feature">
+          <p class="feature-num">01</p>
+          <h3>Pulls approved time</h3>
+          <p>Connects to QBO Time and syncs approved billable entries at month end.</p>
+        </div>
+        <div class="feature">
+          <p class="feature-num">02</p>
+          <h3>Applies your rules</h3>
+          <p>Ceiling rounding, per-client rate overrides, high-touch time buffers. Configured once, runs your way every month.</p>
+        </div>
+        <div class="feature">
+          <p class="feature-num">03</p>
+          <h3>Surfaces a review queue</h3>
+          <p>Every invoice is yours to review and adjust before anything goes to a client. The automation removes data entry, not judgment.</p>
+        </div>
+        <div class="feature">
+          <p class="feature-num">04</p>
+          <h3>Drafts into QBO</h3>
+          <p>Approved invoices are created as drafts in QuickBooks Online. Nothing sends without your sign-off.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="section-label">In practice</p>
+      <div class="proof-block">
+        <p class="proof-quote">"A bookkeeping firm billing 164 invoices a month cut her billing run from 2 to 3 hours down to a 15-minute review queue."</p>
+        <div class="proof-stat">
+          <div class="stat">
+            <span class="stat-number">164</span>
+            <span class="stat-label">invoices / month</span>
+          </div>
+          <div class="stat">
+            <span class="stat-number">2–3 hrs</span>
+            <span class="stat-label">before</span>
+          </div>
+          <div class="stat">
+            <span class="stat-number">15 min</span>
+            <span class="stat-label">after</span>
+          </div>
+        </div>
+        <p class="proof-attr">Bookkeeping firm, Oak Ridge, TN</p>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <h2>See it in 20 minutes.</h2>
+      <p>We'll walk through your current process and show you exactly how Clock to Bill fits your workflow. No commitment required.</p>
+      <a href="https://calendly.com/ctaintegrity/30min">Book a discovery call</a>
+      <span class="cta-note">No commitment — just a look at your workflow</span>
+    </section>
+
+  </main>
+
+  <footer>
+    &copy; 2026 Clock to Bill &mdash; a product of CTA Integrity, LLC
+  </footer>
+
+</body>
+</html>
