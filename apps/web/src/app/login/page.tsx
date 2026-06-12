@@ -46,8 +46,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-gray-900">Dynamic Billing</h1>
-          <p className="text-sm text-gray-500 mt-1">P&L Business Services</p>
+          <h1 className="text-xl font-semibold text-gray-900">ClockToBill</h1>
         </div>
 
         {submitted ? (
