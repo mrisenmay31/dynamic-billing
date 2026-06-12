@@ -27,7 +27,22 @@ function formatEntryDate(startedAt: string): string {
   return `${month}/${day}`
 }
 
-export default async function InvoicesPage() {
+// Returns 'YYYY-MM-01' for the previous calendar month in Eastern time.
+// Eastern-based so a generate near a month boundary picks the correct work month.
+function getPreviousMonthISO(): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: 'numeric',
+  }).formatToParts(new Date())
+  const y = Number(parts.find(p => p.type === 'year')!.value)
+  const m = Number(parts.find(p => p.type === 'month')!.value)
+  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 }
+  return `${prev.y}-${String(prev.m).padStart(2, '0')}-01`
+}
+
+export default async function InvoicesPage(
+  { searchParams }: { searchParams: Promise<{ month?: string }> }
+) {
+  const { month } = await searchParams
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
@@ -42,13 +57,20 @@ export default async function InvoicesPage() {
   const defaultRate = firm?.default_hourly_rate ?? DEFAULT_RATE
   const firmName = firm?.name ?? 'My Firm'
 
-  const { data: billingRun } = await supabase
+  const runQuery = supabase
     .from('billing_runs')
-    .select('id')
+    .select('id, billing_month, status')
     .eq('firm_id', FIRM_ID)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+
+  const { data: billingRun } = month
+    ? await runQuery.eq('billing_month', month).maybeSingle()
+    : await runQuery.order('billing_month', { ascending: false }).limit(1).maybeSingle()
+
+  const { data: allRuns } = await supabase
+    .from('billing_runs')
+    .select('billing_month, status')
+    .eq('firm_id', FIRM_ID)
+    .order('billing_month', { ascending: false })
 
   const { data: drafts } = await supabase
     .from('invoice_drafts')
@@ -58,11 +80,26 @@ export default async function InvoicesPage() {
 
   const customerIds = (drafts ?? []).map((d) => d.customer_id)
 
-  const { data: entries } = await supabase
-    .from('time_entries')
-    .select('*')
-    .in('customer_id', customerIds)
-    .order('started_at', { ascending: true })
+  // Scope entries to the selected billing month to prevent data from other months bleeding through
+  const bm = billingRun?.billing_month ?? null
+  const bmParts = bm ? bm.split('-').map(Number) : null
+  const nextMonth = bmParts
+    ? (bmParts[1] === 12
+      ? `${bmParts[0] + 1}-01-01`
+      : `${bmParts[0]}-${String(bmParts[1] + 1).padStart(2, '0')}-01`)
+    : null
+
+  const { data: entries } = customerIds.length > 0 && bm && nextMonth
+    ? await supabase
+        .from('time_entries')
+        .select('*')
+        .in('customer_id', customerIds)
+        .gte('started_at', bm)
+        .lt('started_at', nextMonth)
+        .order('started_at', { ascending: true })
+    : { data: [] }
+
+  const workYear = bm?.slice(0, 4) ?? ''
 
   const templates: InvoicesClientProps['templates'] = (drafts ?? []).map((draft) => {
     const customer = draft.customers as { id: string; display_name: string; invoice_description_override: string | null; is_high_touch: boolean; hourly_rate_override: number | null }
@@ -76,6 +113,7 @@ export default async function InvoicesPage() {
       invoiceNum: draft.qbo_invoice_number ?? '',
       rawMinutes,
       defaultDescription: draft.description ?? customer.invoice_description_override ?? 'Monthly Bookkeeping',
+      sent: draft.status === 'sent',
       entries: customerEntries.map((e) => ({
         date: formatEntryDate(e.started_at),
         staff: e.staff_name ?? '',
@@ -88,7 +126,7 @@ export default async function InvoicesPage() {
   const allEntries: InvoicesClientProps['allEntries'] = templates.flatMap((t) =>
     t.entries.map((e) => ({
       client: t.client,
-      date: `${e.date}/2026`,
+      date: `${e.date}/${workYear}`,
       employee: e.staff,
       productService: 'Hourly Accounting services',
       description: e.note,
@@ -110,6 +148,8 @@ export default async function InvoicesPage() {
     .eq('firm_id', FIRM_ID)
     .order('display_name')
 
+  const defaultGenerateMonth = getPreviousMonthISO()
+
   return (
     <InvoicesClient
       templates={templates}
@@ -119,6 +159,9 @@ export default async function InvoicesPage() {
       qbTimeConnected={qbTimeConnected}
       qbTimeConnectedAt={qbTimeConnectedAt}
       firmName={firmName}
+      currentRun={billingRun ? { billingMonth: billingRun.billing_month, status: billingRun.status } : null}
+      availableRuns={(allRuns ?? []).map(r => ({ billingMonth: r.billing_month, status: r.status }))}
+      defaultGenerateMonth={defaultGenerateMonth}
       customers={(customers ?? []).map((c) => ({
         id: c.id,
         displayName: c.display_name,

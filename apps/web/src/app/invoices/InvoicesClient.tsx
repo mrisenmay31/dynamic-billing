@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
@@ -37,6 +38,7 @@ interface InvoiceTemplate {
   invoiceNum: string;
   rawMinutes: number;
   defaultDescription: string;
+  sent: boolean;
   entries: TimeEntry[];
 }
 
@@ -106,6 +108,100 @@ function durationToAmount(duration: string, rate: number): number {
   return Math.round(decimalHours * rate * 100) / 100;
 }
 
+/* ─── Billing month helpers (pure string math — no new Date() for display) ── */
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+function parseBillingMonth(bm: string): { year: number; month: number } {
+  const [year, month] = bm.split("-").map(Number);
+  return { year, month };
+}
+
+function addMonths(year: number, month: number, n: number): { year: number; month: number } {
+  const zeroBased = year * 12 + (month - 1) + n;
+  return { year: Math.floor(zeroBased / 12), month: (zeroBased % 12) + 1 };
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+// Work/entries month. '2026-04-01' -> 'April 2026'
+function entriesMonthLabel(bm: string): string {
+  const { year, month } = parseBillingMonth(bm);
+  return `${MONTH_NAMES[month - 1]} ${year}`;
+}
+
+// Work/entries month name only. '2026-04-01' -> 'April'
+function entriesMonthName(bm: string): string {
+  return MONTH_NAMES[parseBillingMonth(bm).month - 1];
+}
+
+// Run/invoice month (= work + 1). '2026-04-01' -> 'May 2026'
+function runMonthLabel(bm: string): string {
+  const { year, month } = parseBillingMonth(bm);
+  const r = addMonths(year, month, 1);
+  return `${MONTH_NAMES[r.month - 1]} ${r.year}`;
+}
+
+// Run/invoice month name only. '2026-04-01' -> 'May'
+function runMonthName(bm: string): string {
+  const { year, month } = parseBillingMonth(bm);
+  return MONTH_NAMES[addMonths(year, month, 1).month - 1];
+}
+
+// Invoice date = 1st of run month. '2026-04-01' -> '05/01/2026'
+function invoiceDateFromBillingMonth(bm: string): string {
+  const { year, month } = parseBillingMonth(bm);
+  const r = addMonths(year, month, 1);
+  return `${pad2(r.month)}/01/${r.year}`;
+}
+
+// Due date = invoice date + offsetDays. Invoice date is always the 1st.
+// '2026-04-01' -> '05/06/2026'
+function invoiceDueDateFromBillingMonth(bm: string, offsetDays = 5): string {
+  const { year, month } = parseBillingMonth(bm);
+  const r = addMonths(year, month, 1);
+  return `${pad2(r.month)}/${pad2(1 + offsetDays)}/${r.year}`;
+}
+
+// Dropdown option label. '2026-04-01' -> 'May 2026 (April entries)'
+function dropdownLabel(bm: string): string {
+  return `${runMonthLabel(bm)} (${entriesMonthName(bm)} entries)`;
+}
+
+function parseHmmToSeconds(hmm: string): number {
+  const [h, m] = hmm.split(":").map(Number);
+  return (h || 0) * 3600 + (m || 0) * 60;
+}
+
+function formatSecondsToHmm(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  return `${h}:${pad2(m)}`;
+}
+
+function computeRawStats(allEntries: { duration: string; amount: number }[]): {
+  totalRawTime: string;
+  totalRawAmount: number;
+} {
+  const totalSeconds = allEntries.reduce((s, e) => s + parseHmmToSeconds(e.duration), 0);
+  // TODO: if per-client rate overrides diverge from the firm default, compute raw amount per-customer so the rounding delta stays honest.
+  const totalRawAmount = Math.round(allEntries.reduce((s, e) => s + e.amount, 0) * 100) / 100;
+  return { totalRawTime: formatSecondsToHmm(totalSeconds), totalRawAmount };
+}
+
+function runDisplayStatus(
+  templates: { sent: boolean }[]
+): { label: string; bg: string; color: string } {
+  const sent = templates.filter(t => t.sent).length;
+  if (templates.length === 0 || sent === 0)
+    return { label: "In Review", bg: "#FFF3E0", color: "#C2410C" };
+  if (sent === templates.length)
+    return { label: "Sent", bg: "#F0FDF4", color: "#2D6A4F" };
+  return { label: "Partially Sent", bg: "#FEF9C3", color: "#A16207" };
+}
+
 /* ─── Client props (data comes from server component via page.tsx) ─── */
 export interface DbCustomer {
   id: string;
@@ -127,6 +223,9 @@ export interface InvoicesClientProps {
   qbTimeConnectedAt: string | null;
   customers: DbCustomer[];
   firmName: string;
+  currentRun: { billingMonth: string; status: string } | null;
+  availableRuns: { billingMonth: string; status: string }[];
+  defaultGenerateMonth: string;
 }
 
 // Kept for reference during type-checking; real data comes from props.
@@ -139,6 +238,7 @@ const TEMPLATES: InvoiceTemplate[] = [
     invoiceNum: "5141",
     rawMinutes: 1894,
     defaultDescription: "Monthly Bookkeeping",
+    sent: false,
     entries: [
       { date: "04/01", staff: "Lea A. Sanford", note: "billing", duration: "0:10" },
       { date: "04/01", staff: "Lea A. Sanford", note: "pos pay", duration: "0:10" },
@@ -201,6 +301,7 @@ const TEMPLATES: InvoiceTemplate[] = [
     invoiceNum: "5101",
     rawMinutes: 713,
     defaultDescription: "Monthly Bookkeeping Services-2026 recons caught up (1st Quarter)",
+    sent: false,
     entries: [
       { date: "04/10", staff: "Abby N. Townsend", note: "reviewing bank accounts and statements to make sure they match each other", duration: "0:15" },
       { date: "04/17", staff: "Giovanni Sanchez", note: "2026 categorizing and recon.", duration: "1:47" },
@@ -222,6 +323,7 @@ const TEMPLATES: InvoiceTemplate[] = [
     invoiceNum: "5138",
     rawMinutes: 708,
     defaultDescription: "Monthly Bookkeeping",
+    sent: false,
     entries: [
       { date: "04/01", staff: "Amy Snyder", note: "Payroll", duration: "1:04" },
       { date: "04/03", staff: "Amy Snyder", note: "Time entry adjustment, created new workbook for next week to add in mileage so I dont forget", duration: "0:12" },
@@ -372,6 +474,34 @@ function StatCard({ label, value, mono = false }: { label: string; value: string
   );
 }
 
+function MonthSelectorDropdown({
+  availableRuns,
+  billingMonth,
+}: {
+  availableRuns: { billingMonth: string; status: string }[];
+  billingMonth: string | null;
+}) {
+  const router = useRouter();
+  if (availableRuns.length < 1) return null;
+  return (
+    <div className="relative shrink-0">
+      <select
+        aria-label="Select billing run"
+        value={billingMonth ?? ""}
+        onChange={(e) => router.push(`/invoices?month=${e.target.value}`)}
+        className="appearance-none text-sm font-medium border border-gray-200 rounded-lg pl-3 pr-8 py-1.5 bg-white text-gray-700 focus:outline-none focus:border-[#40916C] cursor-pointer"
+      >
+        {availableRuns.map((run) => (
+          <option key={run.billingMonth} value={run.billingMonth}>
+            {dropdownLabel(run.billingMonth)}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    </div>
+  );
+}
+
 function inputFocusHandlers() {
   return {
     onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -386,9 +516,48 @@ function inputFocusHandlers() {
 }
 
 /* ─── Billing Run Dashboard ──────────────────────────────────── */
-function BillingRunDashboard({ invoiceStates, templates }: { invoiceStates: Record<string, InvoiceState>; templates: InvoiceTemplate[] }) {
+function BillingRunDashboard({
+  invoiceStates,
+  templates,
+  billingMonth,
+  availableRuns,
+  allEntries,
+  onGenerate,
+}: {
+  invoiceStates: Record<string, InvoiceState>;
+  templates: InvoiceTemplate[];
+  billingMonth: string | null;
+  availableRuns: { billingMonth: string; status: string }[];
+  allEntries: FlatEntry[];
+  onGenerate: () => Promise<void>;
+}) {
   const liveRoundedHours = templates.reduce((sum, t) => sum + invoiceStates[t.id].hours, 0);
   const liveTotalBilling = templates.reduce((sum, t) => sum + invoiceStates[t.id].hours * invoiceStates[t.id].rate, 0);
+
+  if (!billingMonth) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center max-w-sm px-6">
+          <h2 className="font-display text-2xl text-gray-800 mb-2">No Billing Run Yet</h2>
+          <p className="text-sm text-gray-400 mb-6">
+            Generate your first billing run to get started. It will pull approved time entries from QuickBooks Time for the previous month.
+          </p>
+          <button
+            onClick={onGenerate}
+            className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white mx-auto"
+            style={{ backgroundColor: "#2D6A4F" }}
+          >
+            Generate Drafts
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const rawStats = computeRawStats(allEntries);
+  const roundingDiff = Math.round((liveTotalBilling - rawStats.totalRawAmount) * 100) / 100;
+  const roundingDiffSign = roundingDiff >= 0 ? "+" : "";
+  const badge = runDisplayStatus(templates);
 
   const steps = [
     { label: "Imported QBO Time", state: "done" },
@@ -403,19 +572,22 @@ function BillingRunDashboard({ invoiceStates, templates }: { invoiceStates: Reco
         <div>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="font-display text-2xl text-gray-900 leading-tight">May 2026 Billing Run</h1>
-              <p className="text-sm mt-0.5 text-gray-500">April 2026 Time Entries</p>
-              <p className="text-xs mt-1 text-gray-400">April&apos;s time is billed in May — this is standard practice.</p>
+              <h1 className="font-display text-2xl text-gray-900 leading-tight">{runMonthLabel(billingMonth)} Billing Run</h1>
+              <p className="text-sm mt-0.5 text-gray-500">{entriesMonthLabel(billingMonth)} Time Entries</p>
+              <p className="text-xs mt-1 text-gray-400">{entriesMonthName(billingMonth)}&apos;s time is billed in {runMonthName(billingMonth)}, this is standard practice.</p>
             </div>
-            <span className="mt-1 shrink-0 inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "#FFF3E0", color: "#C2410C" }}>
-              In Review
-            </span>
+            <div className="flex items-center gap-3 shrink-0 mt-1">
+              <MonthSelectorDropdown availableRuns={availableRuns} billingMonth={billingMonth} />
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: badge.bg, color: badge.color }}>
+                {badge.label}
+              </span>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: "Clients Ready for Review", value: "3", mono: false },
+            { label: "Clients Ready for Review", value: templates.length.toString(), mono: false },
             { label: "Proposed Billing", value: formatCurrency(liveTotalBilling), mono: true },
             { label: "Rounded Billable Hours", value: `${formatHours(liveRoundedHours)} hrs`, mono: true },
           ].map(({ label, value, mono }) => (
@@ -453,11 +625,11 @@ function BillingRunDashboard({ invoiceStates, templates }: { invoiceStates: Reco
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">Billing Totals — April 2026</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">Billing Totals — {entriesMonthLabel(billingMonth)}</p>
           <div className="divide-y divide-gray-100">
             {[
-              { label: "Total raw time imported", value: "55:15" },
-              { label: "Total raw amount (pre-rounding)", value: "$6,906.25" },
+              { label: "Total raw time imported", value: rawStats.totalRawTime },
+              { label: "Total raw amount (pre-rounding)", value: formatCurrency(rawStats.totalRawAmount) },
               { label: "Total rounded invoice hours", value: `${formatHours(liveRoundedHours)} hrs` },
               { label: "Total proposed billing", value: formatCurrency(liveTotalBilling) },
             ].map(({ label, value }) => (
@@ -468,15 +640,15 @@ function BillingRunDashboard({ invoiceStates, templates }: { invoiceStates: Reco
             ))}
             <div className="flex items-center justify-between py-3">
               <span className="text-sm text-gray-500">Rounding / adjustment difference</span>
-              <span className="font-mono text-sm font-semibold px-2 py-0.5 rounded" style={{ color: "#2D6A4F", backgroundColor: "#F0FDF4" }}>+$62.64</span>
+              <span className="font-mono text-sm font-semibold px-2 py-0.5 rounded" style={{ color: "#2D6A4F", backgroundColor: "#F0FDF4" }}>{roundingDiffSign}{formatCurrency(Math.abs(roundingDiff))}</span>
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5 border-l-4" style={{ borderLeftColor: "#2D6A4F" }}>
           <p className="text-sm text-gray-700 leading-relaxed">
-            May 2026 billing is ready for review. We found{" "}
-            <span className="font-semibold text-gray-900">3 client invoices</span>,{" "}
+            {runMonthLabel(billingMonth)} billing is ready for review. We found{" "}
+            <span className="font-semibold text-gray-900">{templates.length} client invoices</span>,{" "}
             <span className="font-semibold text-gray-900">{formatHours(liveRoundedHours)} rounded billable hours</span>, and{" "}
             <span className="font-semibold text-gray-900">{formatCurrency(liveTotalBilling)}</span> in proposed billing.
             Instead of manually grouping time and rebuilding invoices, review the prepared drafts and create QuickBooks drafts when ready.
@@ -515,6 +687,7 @@ function InvoiceQueueView({
   templates,
   onGenerate,
   firmName,
+  billingMonth,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
@@ -527,6 +700,7 @@ function InvoiceQueueView({
   templates: InvoiceTemplate[];
   onGenerate: () => Promise<void>;
   firmName: string;
+  billingMonth: string;
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -671,7 +845,7 @@ function InvoiceQueueView({
         <div className="px-8 py-5 flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl text-white leading-tight">Invoice Queue</h1>
-            <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>April 2026 · Billing Period</p>
+            <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>{entriesMonthLabel(billingMonth)} · Billing Period</p>
           </div>
           <button
             onClick={handleGenerate}
@@ -739,7 +913,7 @@ function InvoiceQueueView({
                       <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1">
                         <span className="font-mono text-xs text-gray-400">{template.invoiceNum}</span>
                         <span className="text-gray-200 text-xs">·</span>
-                        <span className="text-xs text-gray-400">April 2026</span>
+                        <span className="text-xs text-gray-400">{entriesMonthLabel(billingMonth)}</span>
                         {template.billTo && (
                           <>
                             <span className="text-gray-200 text-xs">·</span>
@@ -822,8 +996,8 @@ function InvoiceQueueView({
                             <div className="text-right">
                               <span className="text-xs uppercase tracking-widest text-gray-300 font-medium">Invoice Preview</span>
                               <div className="mt-2 space-y-0.5">
-                                <p className="text-xs text-gray-500">Date: <span className="font-mono text-gray-700">05/01/2026</span></p>
-                                <p className="text-xs text-gray-500">Due: <span className="font-mono text-gray-700">05/06/2026</span></p>
+                                <p className="text-xs text-gray-500">Date: <span className="font-mono text-gray-700">{invoiceDateFromBillingMonth(billingMonth)}</span></p>
+                                <p className="text-xs text-gray-500">Due: <span className="font-mono text-gray-700">{invoiceDueDateFromBillingMonth(billingMonth)}</span></p>
                                 <p className="text-xs text-gray-500">Terms: <span className="text-gray-700">Due on receipt</span></p>
                               </div>
                             </div>
@@ -1160,7 +1334,7 @@ function InvoiceQueueView({
 }
 
 /* ─── All Time Entries view ──────────────────────────────────── */
-function AllTimeEntriesView({ allEntries }: { allEntries: FlatEntry[] }) {
+function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntry[]; billingMonth: string }) {
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [employeeFilter, setEmployeeFilter] = useState("");
@@ -1205,7 +1379,7 @@ function AllTimeEntriesView({ allEntries }: { allEntries: FlatEntry[] }) {
       {/* Page header */}
       <div className="px-8 pt-6 pb-4">
         <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
-        <p className="text-sm text-gray-500 mt-0.5">April 2026 Import — QuickBooks Time</p>
+        <p className="text-sm text-gray-500 mt-0.5">{entriesMonthLabel(billingMonth)} Import — QuickBooks Time</p>
 
         {/* Stats bar */}
         <div className="flex items-center gap-1 mt-3 flex-wrap">
@@ -1231,7 +1405,7 @@ function AllTimeEntriesView({ allEntries }: { allEntries: FlatEntry[] }) {
           style={{ borderLeft: "3px solid #2D6A4F", backgroundColor: "#f9fafb" }}
         >
           <p className="text-xs font-medium text-gray-700">
-            These are your raw QBO Time entries for April 2026.
+            These are your raw QBO Time entries for {entriesMonthLabel(billingMonth)}.
           </p>
           <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
             Invoice totals in the queue are calculated directly from this data —
@@ -1944,12 +2118,15 @@ function ClientMappingView({
 }
 
 /* ─── Settings view ──────────────────────────────────────────── */
-function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow, firmName }: {
+function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow, firmName, templates, allEntries, liveTotalBilling }: {
   qboConnected: boolean
   qbTimeConnected: boolean
   qbTimeConnectedAt: string | null
   onSyncNow: () => void
   firmName: string
+  templates: InvoiceTemplate[]
+  allEntries: FlatEntry[]
+  liveTotalBilling: number
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -2135,7 +2312,7 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
                 Automates monthly invoice generation by pulling approved time entries from QuickBooks Time, aggregating and rounding hours per client, and sending invoices through QuickBooks Online after firm owner review.
               </p>
               <p className="font-mono text-xs text-gray-500">
-                3 clients · 88 time entries · $6,968.75 in proposed billing
+                {templates.length} clients · {allEntries.length} time entries · {formatCurrency(liveTotalBilling)} in proposed billing
               </p>
             </div>
           </div>
@@ -2166,7 +2343,9 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, currentRun, availableRuns, defaultGenerateMonth }: InvoicesClientProps) {
+  const router = useRouter();
+  const billingMonth = currentRun?.billingMonth ?? null;
   const [activeView, setActiveView] = useState<NavView>("billing-run");
   const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
     Object.fromEntries(templates.map((t) => [t.id, false]))
@@ -2229,14 +2408,18 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
     const res = await fetch('/api/billing-runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ billingMonth: '2026-04-01' }),
+      body: JSON.stringify({ billingMonth: defaultGenerateMonth }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error ?? 'Failed to generate drafts');
+      throw new Error((data as { error?: string }).error ?? 'Failed to generate drafts');
     }
-    window.location.href = '/invoices';
+    // Hard navigation to bust Next.js router cache after mutation (same pattern as original M4 fix)
+    window.location.href = `/invoices?month=${defaultGenerateMonth}`;
   }
+
+  const liveTotalBilling = templates.reduce((sum, t) => sum + invoiceStates[t.id].hours * invoiceStates[t.id].rate, 0);
+  const activeBillingMonth = billingMonth ?? defaultGenerateMonth;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -2280,10 +2463,20 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
             templates={templates}
             onGenerate={handleGenerate}
             firmName={firmName}
+            billingMonth={activeBillingMonth}
           />
         )}
-        {activeView === "billing-run" && <BillingRunDashboard invoiceStates={invoiceStates} templates={templates} />}
-        {activeView === "time-entries" && <AllTimeEntriesView allEntries={allEntries} />}
+        {activeView === "billing-run" && (
+          <BillingRunDashboard
+            invoiceStates={invoiceStates}
+            templates={templates}
+            billingMonth={billingMonth}
+            availableRuns={availableRuns}
+            allEntries={allEntries}
+            onGenerate={handleGenerate}
+          />
+        )}
+        {activeView === "time-entries" && <AllTimeEntriesView allEntries={allEntries} billingMonth={activeBillingMonth} />}
         {activeView === "client-rules" && (
           <ClientRulesView
             sharedHighTouch={sharedHighTouch}
@@ -2300,7 +2493,18 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
         {activeView === "client-mapping" && (
           <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} />
         )}
-        {activeView === "settings" && <SettingsView qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} qbTimeConnectedAt={qbTimeConnectedAt} onSyncNow={handleSyncNow} firmName={firmName} />}
+        {activeView === "settings" && (
+          <SettingsView
+            qboConnected={qboConnected}
+            qbTimeConnected={qbTimeConnected}
+            qbTimeConnectedAt={qbTimeConnectedAt}
+            onSyncNow={handleSyncNow}
+            firmName={firmName}
+            templates={templates}
+            allEntries={allEntries}
+            liveTotalBilling={liveTotalBilling}
+          />
+        )}
       </div>
     </div>
   );
