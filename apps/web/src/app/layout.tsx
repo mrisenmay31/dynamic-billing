@@ -21,8 +21,8 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dynamic Billing · P&L Business Services",
-  description: "Invoice review queue — April 2026",
+  title: "ClockToBill",
+  description: "Automated invoice generation for bookkeeping firms",
 };
 
 export default function RootLayout({

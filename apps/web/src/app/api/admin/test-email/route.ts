@@ -14,7 +14,7 @@ export async function POST() {
   try {
     await sendEmail({
       to: user.email,
-      subject: 'Dynamic Billing — Test Email',
+      subject: 'ClockToBill — Test Email',
       html: testEmailHtml(),
     })
     return NextResponse.json({ success: true, sentTo: user.email })
