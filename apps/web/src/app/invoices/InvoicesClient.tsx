@@ -126,6 +126,7 @@ export interface InvoicesClientProps {
   qbTimeConnected: boolean;
   qbTimeConnectedAt: string | null;
   customers: DbCustomer[];
+  firmName: string;
 }
 
 // Kept for reference during type-checking; real data comes from props.
@@ -513,6 +514,7 @@ function InvoiceQueueView({
   updateInvoiceState: updateState,
   templates,
   onGenerate,
+  firmName,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
@@ -524,6 +526,7 @@ function InvoiceQueueView({
   updateInvoiceState: (id: string, update: Partial<InvoiceState>) => void;
   templates: InvoiceTemplate[];
   onGenerate: () => Promise<void>;
+  firmName: string;
 }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -803,7 +806,7 @@ function InvoiceQueueView({
                         <div className="rounded-lg border border-gray-200 shadow-sm bg-white overflow-hidden">
                           <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-start justify-between">
                             <div>
-                              <p className="text-sm font-semibold text-gray-900">P&amp;L Business Services, LLC</p>
+                              <p className="text-sm font-semibold text-gray-900">{firmName}</p>
                               <div className="mt-2">
                                 <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">Bill to</p>
                                 {template.billTo ? (
@@ -1941,11 +1944,12 @@ function ClientMappingView({
 }
 
 /* ─── Settings view ──────────────────────────────────────────── */
-function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow }: {
+function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow, firmName }: {
   qboConnected: boolean
   qbTimeConnected: boolean
   qbTimeConnectedAt: string | null
   onSyncNow: () => void
+  firmName: string
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -2124,12 +2128,11 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
         <div className="rounded-xl bg-gray-100 px-6 py-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">About</p>
           <div className="space-y-1 text-sm text-gray-500">
-            <p className="font-semibold text-gray-600">Billing Review Dashboard — Prototype</p>
-            <p>Built for P&amp;L Business Services · May 2026</p>
-            <p>Pilot client: Lea Ann Sanford, Owner</p>
+            <p className="font-semibold text-gray-600">ClockToBill — Billing Review Dashboard</p>
+            <p>{firmName}</p>
             <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
               <p className="text-sm text-gray-500 leading-relaxed">
-                This prototype uses real April 2026 data from QuickBooks Time. No backend, no API connections, no live QuickBooks integration. All invoice actions simulate the real workflow — when the product is live, &quot;Approve &amp; Send Invoice&quot; will create and send the invoice directly via the QBO API in one step.
+                Automates monthly invoice generation by pulling approved time entries from QuickBooks Time, aggregating and rounding hours per client, and sending invoices through QuickBooks Online after firm owner review.
               </p>
               <p className="font-mono text-xs text-gray-500">
                 3 clients · 88 time entries · $6,968.75 in proposed billing
@@ -2163,7 +2166,7 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName }: InvoicesClientProps) {
   const [activeView, setActiveView] = useState<NavView>("billing-run");
   const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
     Object.fromEntries(templates.map((t) => [t.id, false]))
@@ -2240,7 +2243,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
       {/* Sidebar */}
       <aside className="flex flex-col shrink-0 w-56" style={{ backgroundColor: "#2D6A4F" }}>
         <div className="px-5 py-5 border-b" style={{ borderColor: "rgba(216,243,220,0.2)" }}>
-          <p className="font-display text-white text-base leading-snug">P&L Business Services</p>
+          <p className="font-display text-white text-base leading-snug">{firmName}</p>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV_ITEMS.map(({ view, label, Icon }) => {
@@ -2276,6 +2279,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
             updateInvoiceState={updateInvoiceState}
             templates={templates}
             onGenerate={handleGenerate}
+            firmName={firmName}
           />
         )}
         {activeView === "billing-run" && <BillingRunDashboard invoiceStates={invoiceStates} templates={templates} />}
@@ -2296,7 +2300,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
         {activeView === "client-mapping" && (
           <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} />
         )}
-        {activeView === "settings" && <SettingsView qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} qbTimeConnectedAt={qbTimeConnectedAt} onSyncNow={handleSyncNow} />}
+        {activeView === "settings" && <SettingsView qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} qbTimeConnectedAt={qbTimeConnectedAt} onSyncNow={handleSyncNow} firmName={firmName} />}
       </div>
     </div>
   );

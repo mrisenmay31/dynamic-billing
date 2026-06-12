@@ -35,11 +35,12 @@ export default async function InvoicesPage() {
 
   const { data: firm } = await supabase
     .from('firms')
-    .select('default_hourly_rate')
+    .select('name, default_hourly_rate')
     .eq('id', FIRM_ID)
     .single()
 
   const defaultRate = firm?.default_hourly_rate ?? DEFAULT_RATE
+  const firmName = firm?.name ?? 'My Firm'
 
   const { data: billingRun } = await supabase
     .from('billing_runs')
@@ -117,6 +118,7 @@ export default async function InvoicesPage() {
       qboConnected={qboConnected}
       qbTimeConnected={qbTimeConnected}
       qbTimeConnectedAt={qbTimeConnectedAt}
+      firmName={firmName}
       customers={(customers ?? []).map((c) => ({
         id: c.id,
         displayName: c.display_name,
