@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
 import { fetchOrCreateQboItemId, fetchQboCustomerEmail, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
+import { recomputeBillingRunStatus } from '@/lib/billing/run-status'
 
 const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
@@ -124,6 +125,7 @@ export async function POST(
       total_amount: finalAmount,
       updated_at: new Date().toISOString(),
     }).eq('id', id)
+    await recomputeBillingRunStatus(adminClient, draft.billing_run_id)
 
     return NextResponse.json(
       { error: `No email address for "${customer.display_name}" in QBO — add one to the customer record before sending invoices` },
@@ -145,6 +147,7 @@ export async function POST(
       total_amount: finalAmount,
       updated_at: new Date().toISOString(),
     }).eq('id', id)
+    await recomputeBillingRunStatus(adminClient, draft.billing_run_id)
 
     return NextResponse.json(
       { error: `Invoice created in QBO (ID: ${invoiceResult.invoiceId}) but email send failed: ${(err as Error).message}` },
@@ -164,6 +167,7 @@ export async function POST(
     total_amount: finalAmount,
     updated_at: now,
   }).eq('id', id)
+  await recomputeBillingRunStatus(adminClient, draft.billing_run_id)
 
   return NextResponse.json({
     invoiceId: invoiceResult.invoiceId,
