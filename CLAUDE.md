@@ -112,7 +112,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ---
 
-## Current Code Status (as of 2026-06-09)
+## Current Code Status (as of 2026-06-12)
 
 ### Milestone summary
 | Milestone | Status | Confirmed |
@@ -124,12 +124,15 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 | M4 — Billing run engine | ✅ Complete | 2026-06-03 |
 | M5 — Review queue DB wiring | ✅ Complete | 2026-06-04 |
 | M6 — QBO invoice send | ✅ Complete | 2026-06-04 |
+| UI polish + dynamic billing run page | ✅ Complete | 2026-06-12 |
 | M7 — UAT with Lea Ann | 🔲 Next | Pending pre-production checklist |
 
 ### Tech stack
 - **`apps/web/`** — Next.js 15, TypeScript, Tailwind v4, App Router, `lucide-react`
+- **`marketing/`** — standalone static HTML landing page; own `vercel.json`; deployed separately at `clocktobill.com`
 - **Supabase** — project ref `vvmfbtvxsjeyrmsqodon`, region `us-east-1`
-- **Deployed:** `https://app.clocktobill.com` (auto-deploys from `main`)
+- **Deployed (app):** `https://app.clocktobill.com` (auto-deploys from `main`)
+- **Deployed (marketing):** `https://clocktobill.com` — separate Vercel project, Root Directory: `marketing` (setup in progress 2026-06-10)
 - **GitHub:** `github.com/mrisenmay31/dynamic-billing` (private, `mrisenmay31`)
 
 ### Key source files
@@ -144,7 +147,8 @@ src/app/api/billing-runs/route.ts      — POST: create billing run + invoice dr
 src/app/api/customers/sync-qbo/route.ts   — POST: fetch QBO customers, auto-match by name
 src/app/api/customers/[id]/route.ts       — PATCH: update qbo_customer_id
 src/app/api/customers/mappings/route.ts   — GET/POST/DELETE: QB Time jobcode mappings
-src/lib/billing/engine.ts     — pure fn: (firmId, billingMonth) → DraftPayload[]; no DB writes
+src/lib/billing/engine.ts         — pure fn: (firmId, billingMonth) → DraftPayload[]; no DB writes
+src/lib/billing/run-status.ts     — recomputeBillingRunStatus: syncs billing_runs.status from draft statuses after each send
 src/lib/qbo/oauth.ts          — QBO OAuth helpers (auth URL, token exchange, refresh)
 src/lib/qbo/connection.ts     — getValidQboToken (auto-refresh), saveQboConnection
 src/lib/qbo/customers.ts      — fetchQboCustomers (QBO Customer query)
@@ -160,9 +164,9 @@ src/app/terms/page.tsx        — static Terms of Service page (public, no auth 
 ```
 
 ### Nav views in InvoicesClient.tsx
-1. **Billing Run** — summary dashboard; stat cards, progress indicator, totals
+1. **Billing Run** — summary dashboard; stat cards, progress indicator, totals; month selector dropdown
 2. **Invoice Queue** — per-client review cards with billing math, invoice preview, time entries, adjustment controls; "Approve & Send Invoice" button per card; "Send All Approved Invoices" bulk action
-3. **All Time Entries** — filterable flat table of all 88 April 2026 entries
+3. **All Time Entries** — filterable flat table of time entries (scoped to selected month)
 4. **Client Rules** — firm-wide defaults + per-client overrides (rate, description, high-touch flag)
 5. **Client Mapping** — QBO customer sync + manual match UI; QB Time jobcode panel (scaffolded; M2b live but jobcode-to-customer linking UI not yet wired)
 6. **Settings** — integration status, billing behavior config
@@ -282,6 +286,29 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 - **`src/middleware.ts`** — added `/privacy` and `/terms` to public routes (no redirect to `/login`)
 - Both legal pages required for Intuit App Assessment Questionnaire submission; live at `https://app.clocktobill.com/privacy` and `https://app.clocktobill.com/terms`
 
+### UI polish + dynamic billing run page — what was built (2026-06-12)
+
+**Rebrand:**
+- **`src/app/login/page.tsx`** — heading changed from "Dynamic Billing" to "ClockToBill"; "P&L Business Services" subheading removed
+- **`src/app/layout.tsx`** — browser tab title updated to "ClockToBill"
+- **`src/lib/email/templates/test.ts`** and **`src/app/api/admin/test-email/route.ts`** — "Dynamic Billing" → "ClockToBill"
+
+**Dynamic billing run page (month selector spec):**
+- **`src/app/invoices/page.tsx`** — now accepts `?month=YYYY-MM-DD` search param; queries matching billing run or falls back to latest. Added `allRuns` query for dropdown. **Critical scope fix:** entries query now has `.gte('started_at', bm).lt('started_at', nextMonth)` to prevent cross-month data bleed. Entry date year derived from `billingRun.billing_month` (not hardcoded 2026). Added `sent: boolean` to each template. Added `getPreviousMonthISO()` using Eastern timezone via `Intl.DateTimeFormat`. Passes `currentRun`, `availableRuns`, `defaultGenerateMonth`, `firmName` props.
+- **`src/app/invoices/InvoicesClient.tsx`** — major overhaul:
+  - Helper functions (pure string math, no `new Date()` for display — avoids UTC-midnight timezone bug): `parseBillingMonth`, `addMonths`, `entriesMonthLabel`, `entriesMonthName`, `runMonthLabel`, `runMonthName`, `invoiceDateFromBillingMonth`, `invoiceDueDateFromBillingMonth`, `dropdownLabel`, `computeRawStats`, `runDisplayStatus`
+  - `runDisplayStatus` computes badge from draft statuses (not stale `billing_runs.status`): In Review (0 sent, amber) / Partially Sent (some, yellow) / Sent (all, green)
+  - `MonthSelectorDropdown` sub-component — plain `<select>`, `router.push` for read navigation
+  - All hardcoded "April 2026" / "May 2026" / date strings replaced with helper function calls
+  - `handleGenerate` sends `defaultGenerateMonth` (Eastern prev-month) as `billingMonth`; navigates with `window.location.href` (not `router.push`) to bust Next.js router cache
+  - Empty state when `billingMonth === null` (no runs yet or `?month=` with no match)
+  - `firmName` prop added and passed through to `InvoiceQueueView` and `SettingsView` sub-functions
+  - Settings stat line replaced: `${templates.length} clients · ${allEntries.length} time entries · ${formatCurrency(liveTotalBilling)}…`
+
+**Run status sync:**
+- **`src/lib/billing/run-status.ts`** — NEW FILE: `recomputeBillingRunStatus(adminClient, billingRunId)` — reads draft statuses, writes `pending`/`partially_sent`/`sent` to `billing_runs.status`. Best-effort (never throws into the send flow).
+- **`src/app/api/invoice-drafts/[id]/send/route.ts`** — calls `recomputeBillingRunStatus` after success write, no-email 422 error, and QBO send failure 502 error.
+
 ### Known gap — auto-create QBO customer (post-M6 backlog)
 If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send currently fails with a clear error. The fix: at send time, if `qbo_customer_id` is null, create the customer in QBO using `display_name`, save the new ID back to `customers.qbo_customer_id`, and proceed. Same pattern as item auto-create. Not blocking for pilot (Lea Ann's clients already exist in QBO), but needed before onboarding new firms.
 
@@ -311,10 +338,22 @@ M2b slots in parallel at any point — does not block M4–M6.
 ---
 
 ## Vercel Deployment Notes
+
+### App (`app.clocktobill.com`)
 - Root Directory: `apps/web`
 - Framework: Next.js, Output: default (`.next`)
 - Auto-deploys from `main` via GitHub integration
 - Required env vars: all from `apps/web/.env.local.example` plus `NEXT_PUBLIC_APP_URL=https://app.clocktobill.com`
+
+### Marketing site (`clocktobill.com`)
+- Separate Vercel project pointing at the same `mrisenmay31/dynamic-billing` repo
+- Root Directory: `marketing`
+- Framework: **Other** (plain HTML, no build step)
+- Domain: `clocktobill.com` (and optionally `www.clocktobill.com` → redirect)
+- `marketing/vercel.json` handles security headers and clean URLs automatically
+- Nav "Log in" link → `https://app.clocktobill.com/login`
+- Both Calendly CTA buttons → `https://calendly.com/ctaintegrity/30min`
+- **Status as of 2026-06-10:** files merged to `main`; Vercel project setup in progress (root directory picker issue being worked through)
 
 ## CLI Commands (run from `apps/web/`)
 - Dev server: `npm run dev`
