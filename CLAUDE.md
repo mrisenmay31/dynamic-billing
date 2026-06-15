@@ -112,7 +112,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ---
 
-## Current Code Status (as of 2026-06-12)
+## Current Code Status (as of 2026-06-15)
 
 ### Milestone summary
 | Milestone | Status | Confirmed |
@@ -139,7 +139,9 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 ```
 src/app/invoices/page.tsx              — server component; fetches latest billing run, drafts, entries, customers
 src/app/invoices/InvoicesClient.tsx    — all UI/state (6 nav views); "use client"
-src/app/login/page.tsx                 — password + magic link login
+src/app/login/page.tsx                 — password + magic link login; "Forgot password?" link
+src/app/forgot-password/page.tsx       — sends Supabase password reset email; public route
+src/app/reset-password/page.tsx        — handles recovery token via onAuthStateChange; public route
 src/app/api/auth/callback/route.ts     — PKCE code exchange (production auth path)
 src/app/api/auth/qbo/connect/route.ts  — initiates QBO OAuth
 src/app/api/auth/qbo/callback/route.ts — QBO OAuth callback, stores tokens
@@ -158,7 +160,7 @@ src/lib/supabase/server.ts    — SSR Supabase client (uses next/headers cookies
 src/lib/supabase/admin.ts     — service role client (bypasses RLS)
 src/lib/crypto/tokens.ts      — AES-256-GCM encrypt/decrypt; requires TOKEN_ENCRYPTION_KEY env var
 src/lib/audit/log.ts          — writes to audit_logs
-src/middleware.ts              — auth guard; passes /login, /api/auth/**, /auth/callback, /privacy, /terms
+src/middleware.ts              — auth guard; unauthenticated → /login (except public routes); authenticated on /login → /invoices (except /forgot-password, /reset-password)
 src/app/privacy/page.tsx      — static Privacy Policy page (public, no auth required)
 src/app/terms/page.tsx        — static Terms of Service page (public, no auth required)
 ```
@@ -247,7 +249,9 @@ rawSeconds (from time_entries.duration_seconds)
 ```
 
 ### Auth flow (production — Vercel)
-Magic link → email → click → `/api/auth/callback?code=XXX` → PKCE exchange → session cookies → `/invoices`
+- **Password:** email + password → `signInWithPassword` → `/invoices`
+- **Forgot password:** `/forgot-password` → `resetPasswordForEmail` → email → click → `/reset-password` → `onAuthStateChange(PASSWORD_RECOVERY)` → `updateUser({ password })` → `/invoices`
+- **Magic link (fallback):** "Sign in with a magic link instead" → `signInWithOtp` → email → click → `/api/auth/callback?code=XXX` → PKCE exchange → session cookies → `/invoices`
 
 ### Auth flow (local dev)
 Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
@@ -308,6 +312,12 @@ Password login: `matt@ctaintegrity.com` / `devpassword123` → `/invoices`
 **Run status sync:**
 - **`src/lib/billing/run-status.ts`** — NEW FILE: `recomputeBillingRunStatus(adminClient, billingRunId)` — reads draft statuses, writes `pending`/`partially_sent`/`sent` to `billing_runs.status`. Best-effort (never throws into the send flow).
 - **`src/app/api/invoice-drafts/[id]/send/route.ts`** — calls `recomputeBillingRunStatus` after success write, no-email 422 error, and QBO send failure 502 error.
+
+### Password auth + forgot/reset password flow — what was built (2026-06-15)
+- **`src/app/login/page.tsx`** — email + password is now the primary login method in production (was magic-link-only). Added "Forgot password?" link inline with password label. Magic link demoted to secondary option ("Sign in with a magic link instead"). No env-gating — both modes available in all environments.
+- **`src/app/forgot-password/page.tsx`** — NEW FILE: public page; calls `supabase.auth.resetPasswordForEmail` with `redirectTo: https://app.clocktobill.com/reset-password`; shows confirmation on success, inline error on failure.
+- **`src/app/reset-password/page.tsx`** — NEW FILE: public client component; listens for `PASSWORD_RECOVERY` event via `onAuthStateChange` (token arrives in URL hash, not accessible server-side); shows password + confirm fields once session is established; calls `supabase.auth.updateUser({ password })`; redirects to `/invoices` on success.
+- **`src/middleware.ts`** — extracted `authBypassRoutes = ['/forgot-password', '/reset-password']` shared by both guards. Added authenticated redirect: logged-in user on `/login` → `/invoices` (bypass routes excluded so a user with an active session can still complete password reset).
 
 ### Known gap — auto-create QBO customer (post-M6 backlog)
 If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send currently fails with a clear error. The fix: at send time, if `qbo_customer_id` is null, create the customer in QBO using `display_name`, save the new ID back to `customers.qbo_customer_id`, and proceed. Same pattern as item auto-create. Not blocking for pilot (Lea Ann's clients already exist in QBO), but needed before onboarding new firms.
