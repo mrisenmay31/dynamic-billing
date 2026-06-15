@@ -2325,8 +2325,51 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
           </a>
         </p>
 
+        {/* Account */}
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Account</p>
+          </div>
+          <div className="px-6 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-700">Change your password</p>
+              <p className="text-xs text-gray-400 mt-0.5">We&apos;ll send a reset link to your email</p>
+            </div>
+            <a
+              href="/forgot-password"
+              className="text-sm font-medium text-[#2D6A4F] hover:text-[#235a42] transition-colors"
+            >
+              Reset password
+            </a>
+          </div>
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+            <p className="text-sm text-gray-700">Sign out of ClockToBill</p>
+            <SignOutButton />
+          </div>
+        </div>
+
       </div>
     </div>
+  );
+}
+
+/* ─── Sign out ───────────────────────────────────────────────── */
+function SignOutButton() {
+  const [loading, setLoading] = useState(false);
+  async function handleSignOut() {
+    setLoading(true);
+    const { createClient } = await import('@/lib/supabase/client');
+    await createClient().auth.signOut();
+    window.location.href = '/login';
+  }
+  return (
+    <button
+      onClick={handleSignOut}
+      disabled={loading}
+      className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
+    >
+      {loading ? 'Signing out…' : 'Sign out'}
+    </button>
   );
 }
 
