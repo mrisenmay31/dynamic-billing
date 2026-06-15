@@ -12,10 +12,20 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const supabase = createClient();
+
+    // PKCE flow: Supabase delivers ?code=XXX to this page; exchange it for a session.
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) setError("Invalid or expired reset link. Please request a new one.");
+        else setReady(true);
+      });
+      return;
+    }
+
+    // Implicit flow fallback: token arrives in URL hash, PASSWORD_RECOVERY event fires.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setReady(true);
-      }
+      if (event === "PASSWORD_RECOVERY") setReady(true);
     });
     return () => subscription.unsubscribe();
   }, []);
