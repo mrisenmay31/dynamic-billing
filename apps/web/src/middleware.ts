@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  if (!user && !pathname.startsWith('/login') && !pathname.startsWith('/api/auth') && !pathname.startsWith('/auth/callback') && pathname !== '/privacy' && pathname !== '/terms') {
+  if (!user && !pathname.startsWith('/login') && !pathname.startsWith('/api/auth') && !pathname.startsWith('/auth/callback') && pathname !== '/privacy' && pathname !== '/terms' && pathname !== '/forgot-password' && pathname !== '/reset-password') {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

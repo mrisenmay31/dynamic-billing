@@ -75,9 +75,14 @@ export default function LoginPage() {
 
             {mode === "password" && (
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                  Password
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                    Password
+                  </label>
+                  <a href="/forgot-password" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+                    Forgot password?
+                  </a>
+                </div>
                 <input
                   id="password"
                   type="password"
@@ -107,7 +112,7 @@ export default function LoginPage() {
               onClick={() => { setMode(mode === "password" ? "magic" : "password"); setError(null); }}
               className="w-full text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
-              {mode === "password" ? "Use magic link instead" : "Use password instead"}
+              {mode === "password" ? "Sign in with a magic link instead" : "Use password instead"}
             </button>
           </form>
         )}
