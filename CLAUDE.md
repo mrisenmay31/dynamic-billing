@@ -112,7 +112,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ---
 
-## Current Code Status (as of 2026-06-15)
+## Current Code Status (as of 2026-06-17)
 
 ### Milestone summary
 | Milestone | Status | Confirmed |
@@ -125,6 +125,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 | M5 — Review queue DB wiring | ✅ Complete | 2026-06-04 |
 | M6 — QBO invoice send | ✅ Complete | 2026-06-04 |
 | UI polish + dynamic billing run page | ✅ Complete | 2026-06-12 |
+| Mobile-responsive UI (Phases 1–3) | ✅ Complete | 2026-06-17 |
 | M7 — UAT with Lea Ann | 🔲 Next | Pending pre-production checklist |
 
 ### Tech stack
@@ -333,6 +334,18 @@ Every QBO API response includes an `intuit_tid` header — Intuit's trace ID for
 - **`src/lib/qbo/invoices.ts`** — added `getIntuitTid(res)` + `throwQboError(label, res)` helpers. Every QBO failure now throws an Error whose message embeds `[intuit_tid: …]`, so the trace ID is persisted to `invoice_drafts.last_error` on any failed send. `createQboInvoice` and `sendQboInvoice` now return `intuitTid` on success.
 - **`src/app/api/invoice-drafts/[id]/send/route.ts`** — on successful send, writes an `invoice_sent` audit log to `audit_logs.details` with `create_intuit_tid` and `send_intuit_tid`.
 - **`src/app/api/qbo/items/route.ts`** — debug endpoint now returns `intuit_tid` in both success and error responses.
+
+### Mobile-responsive UI — what was built (2026-06-17)
+The invoices app was built desktop-only (0 responsive breakpoints) and was non-functional on phones — the fixed `w-56` sidebar consumed most of the viewport and pushed content off-screen. Made it usable on mobile while keeping desktop **pixel-identical** (every change is gated behind a `sm:`/`md:` prefix; base styles are mobile). Shipped via PR #1, squash-merged to `main` (commit `f1fd104`), deployed to production at `app.clocktobill.com`.
+
+- **`src/app/layout.tsx`** — added explicit `export const viewport` (`width=device-width, initialScale=1`).
+- **`src/app/invoices/InvoicesClient.tsx`** — all mobile work lives here (single ~2.5k-line client component):
+  - **Shell (Phase 1):** sidebar is `hidden md:flex` static on desktop and a `fixed` off-canvas drawer on mobile (`-translate-x-full` → `translate-x-0` via `sidebarOpen` state). New `md:hidden` top bar with a hamburger (`Menu` icon) shows the active view label (`activeNavLabel` derived from `NAV_ITEMS`). Backdrop tap, nav-item tap, and an X button all close the drawer. Nav is local state (`setActiveView`), not routing — drawer close is just `setSidebarOpen(false)`.
+  - **Content (Phase 2):** container padding `px-8` → `px-4 md:px-8` everywhere; stat-card grids `grid-cols-3` → `grid-cols-1 sm:grid-cols-3`; page/panel headers and the invoice-queue bottom action bar stack (`flex-col … sm:flex-row`) with action buttons `w-full sm:w-auto`; invoice-card qty/adj/rate fields stack; wide tables (All Time Entries, Client Mapping) wrapped in `overflow-x-auto` with `min-w-[…]` so they scroll instead of breaking.
+  - **Polish:** Billing Run progress stepper goes vertical on mobile (stacked circles + side labels + vertical connector via dual `sm:hidden`/`hidden sm:block` connector divs) and horizontal on `sm+`; Settings integration rows + BillerGenie row stack label-above-value.
+  - **Touch targets (Phase 3):** quarter-hour adjusters (`py-2 sm:py-1.5`, row `flex-wrap`), Approve & Send + Send All buttons full-width on mobile, Connect/Sync inline buttons taller, filter `selectCls` + month dropdown `py-2.5 sm:py-2`, hamburger/drawer-close icons `p-2` (~40px), search-clear given a padded hit area + `aria-label`.
+  - **Client Rules fix:** Firm-Wide Defaults rows used fixed `w-72` inputs that overflowed the card on phones; rows now stack and inputs are `w-full sm:w-72`.
+- **Pattern for future views:** base classes = mobile; add `sm:`/`md:` for desktop. Stack rows with `flex-col gap-… sm:flex-row sm:items-center sm:justify-between`; make fixed-width inputs `w-full sm:w-[fixed]`; wrap any multi-column table in `overflow-x-auto` + `min-w-[…]`.
 
 ---
 
