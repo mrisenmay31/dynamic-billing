@@ -490,7 +490,7 @@ function MonthSelectorDropdown({
         aria-label="Select billing run"
         value={billingMonth ?? ""}
         onChange={(e) => router.push(`/invoices?month=${e.target.value}`)}
-        className="appearance-none text-sm font-medium border border-gray-200 rounded-lg pl-3 pr-8 py-1.5 bg-white text-gray-700 focus:outline-none focus:border-[#40916C] cursor-pointer"
+        className="appearance-none text-sm font-medium border border-gray-200 rounded-lg pl-3 pr-8 py-2 sm:py-1.5 bg-white text-gray-700 focus:outline-none focus:border-[#40916C] cursor-pointer"
       >
         {availableRuns.map((run) => (
           <option key={run.billingMonth} value={run.billingMonth}>
@@ -1096,7 +1096,7 @@ function InvoiceQueueView({
                                 </svg>
                                 High-touch client — consider adding 15–45 min for calls and drop-ins
                               </div>
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
                                 {[
                                   { label: "+0.25 hr", delta: 0.25 },
                                   { label: "+0.50 hr", delta: 0.50 },
@@ -1110,7 +1110,7 @@ function InvoiceQueueView({
                                       updateState(template.id, { hours: newHours });
                                       debouncedPatch(template.draftId, { rounded_hours: newHours });
                                     }}
-                                    className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
+                                    className="text-xs font-medium px-3 py-2 sm:py-1.5 rounded-lg border transition-colors"
                                     style={{ borderColor: "#d1fae5", color: "#374151" }}
                                     onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#2D6A4F"; e.currentTarget.style.color = "#2D6A4F"; }}
                                     onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#d1fae5"; e.currentTarget.style.color = "#374151"; }}
@@ -1121,7 +1121,7 @@ function InvoiceQueueView({
                                 <button
                                   type="button"
                                   onClick={() => document.getElementById(`hours-input-${template.id}`)?.focus()}
-                                  className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
+                                  className="text-xs font-medium px-3 py-2 sm:py-1.5 rounded-lg border transition-colors"
                                   style={{ borderColor: "#d1fae5", color: "#374151" }}
                                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#2D6A4F"; e.currentTarget.style.color = "#2D6A4F"; }}
                                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#d1fae5"; e.currentTarget.style.color = "#374151"; }}
@@ -1244,7 +1244,7 @@ function InvoiceQueueView({
                       </div>
 
                       {/* 5. Card footer */}
-                      <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-4 border-t border-gray-100">
                         <div className="flex items-baseline gap-2">
                           <span className="text-sm text-gray-500">Invoice total</span>
                           <span className="font-mono text-2xl font-medium text-gray-900">{formatCurrency(amount)}</span>
@@ -1252,7 +1252,7 @@ function InvoiceQueueView({
                         <button
                           onClick={() => createDraft(template.id)}
                           disabled={savingIds.has(template.id)}
-                          className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                          className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
                           style={{ backgroundColor: "#2D6A4F" }}
                           onMouseEnter={(e) => { if (!savingIds.has(template.id)) e.currentTarget.style.backgroundColor = "#40916C"; }}
                           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
@@ -1376,7 +1376,7 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
   }
 
   const selectCls =
-    "appearance-none text-sm border border-gray-200 rounded-lg pl-3 pr-7 py-2 text-gray-700 bg-white focus:outline-none focus:border-[#40916C] cursor-pointer";
+    "appearance-none text-sm border border-gray-200 rounded-lg pl-3 pr-7 py-2.5 sm:py-2 text-gray-700 bg-white focus:outline-none focus:border-[#40916C] cursor-pointer";
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -1437,7 +1437,8 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1.5"
+                aria-label="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -2171,7 +2172,7 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
                     )}
                     <button
                       onClick={onSyncNow}
-                      className="inline-flex items-center text-xs font-medium px-3 py-1 rounded-md text-white"
+                      className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
                       style={{ backgroundColor: "#2D6A4F" }}
                     >
                       Sync Now
@@ -2184,7 +2185,7 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
                     </span>
                     <a
                       href="/api/auth/qb-time/connect"
-                      className="inline-flex items-center text-xs font-medium px-3 py-1 rounded-md text-white"
+                      className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
                       style={{ backgroundColor: "#2D6A4F" }}
                     >
                       Connect QB Time
@@ -2209,7 +2210,7 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
                     </span>
                     <a
                       href="/api/auth/qbo/connect"
-                      className="inline-flex items-center text-xs font-medium px-3 py-1 rounded-md text-white"
+                      className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
                       style={{ backgroundColor: "#2D6A4F" }}
                     >
                       Connect
@@ -2498,7 +2499,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
           <p className="font-display text-white text-base leading-snug">{firmName}</p>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="md:hidden text-white/80 hover:text-white p-1 -mr-1"
+            className="md:hidden text-white/80 hover:text-white p-2 -mr-2"
             aria-label="Close menu"
           >
             <X size={20} />
@@ -2530,7 +2531,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
         <header className="md:hidden flex items-center gap-3 px-4 h-14 shrink-0 border-b border-gray-200 bg-white">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="text-gray-700 p-1 -ml-1"
+            className="text-gray-700 p-2 -ml-2"
             aria-label="Open menu"
           >
             <Menu size={22} />
