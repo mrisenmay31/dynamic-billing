@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { getValidQbTimeToken } from '@/lib/qb-time/auth'
+import { getFirmContext } from '@/lib/auth/firm'
 
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QB_TIME_BASE = 'https://rest.tsheets.com/api/v1'
 interface QbTimesheet {
   id: number
@@ -99,8 +99,9 @@ function toEasternMidnightISO(dateStr: string): string {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { firmId } = ctx
 
   let body: { start_date?: string; end_date?: string }
   try {
@@ -119,14 +120,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let skipped = 0
 
   try {
-    const token = await getValidQbTimeToken(FIRM_ID)
+    const token = await getValidQbTimeToken(firmId)
     const { timesheets, users, jobcodes } = await fetchTimesheets(token, start_date, end_date)
 
     // Load customer mappings for jobcode → customer_id lookup
     const { data: mappings } = await adminClient
       .from('customer_mappings')
       .select('qb_time_source_id, customer_id')
-      .eq('firm_id', FIRM_ID)
+      .eq('firm_id', firmId)
       .eq('qb_time_source_type', 'jobcode')
 
     const jobcodeToCustomer = new Map<string, string>()
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           .from('time_entries')
           .upsert(
             {
-              firm_id: FIRM_ID,
+              firm_id: firmId,
               customer_id: customerId,
               qb_time_entry_id: String(ts.id),
               qb_time_jobcode_id: String(ts.jobcode_id),
@@ -184,7 +185,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     await adminClient.from('integration_sync_logs').insert({
-      firm_id: FIRM_ID,
+      firm_id: firmId,
       integration: 'qb_time',
       operation: 'sync_timesheets',
       status: 'success',
@@ -204,7 +205,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.error('[sync-timesheets] fatal error:', error.stack ?? error)
 
     await adminClient.from('integration_sync_logs').insert({
-      firm_id: FIRM_ID,
+      firm_id: firmId,
       integration: 'qb_time',
       operation: 'sync_timesheets',
       status: 'error',

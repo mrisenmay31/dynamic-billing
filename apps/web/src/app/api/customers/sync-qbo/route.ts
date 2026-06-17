@@ -2,21 +2,21 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { fetchQboCustomers } from '@/lib/qbo/customers'
-
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
+import { getFirmContext } from '@/lib/auth/firm'
 
 export async function POST() {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const ctx = await getFirmContext(supabase)
+    if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { firmId } = ctx
 
-    const qboCustomers = await fetchQboCustomers(FIRM_ID)
+    const qboCustomers = await fetchQboCustomers(firmId)
 
     const { data: dbCustomers, error: dbErr } = await adminClient
       .from('customers')
       .select('id, display_name, qbo_customer_id')
-      .eq('firm_id', FIRM_ID)
+      .eq('firm_id', firmId)
 
     if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
     if (!dbCustomers) return NextResponse.json({ error: 'No customers found' }, { status: 500 })
@@ -40,7 +40,7 @@ export async function POST() {
     const { data: updatedCustomers } = await adminClient
       .from('customers')
       .select('id, display_name, qbo_customer_id')
-      .eq('firm_id', FIRM_ID)
+      .eq('firm_id', firmId)
       .order('display_name')
 
     return NextResponse.json({ qboCustomers, customers: updatedCustomers ?? [], autoMatched })

@@ -6,8 +6,8 @@ import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
 import { fetchOrCreateQboItemId, fetchQboCustomerEmail, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
 import { recomputeBillingRunStatus } from '@/lib/billing/run-status'
 import { logAudit } from '@/lib/audit/log'
+import { getFirmContext } from '@/lib/auth/firm'
 
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
 
 export async function POST(
@@ -15,8 +15,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { userId, firmId } = ctx
 
   const { id } = await params
 
@@ -31,6 +32,11 @@ export async function POST(
     .single()
 
   if (fetchError || !draft) {
+    return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
+  }
+
+  // Tenant scope: a draft can only be sent by a member of the firm that owns it.
+  if (draft.firm_id !== firmId) {
     return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
   }
 
@@ -50,7 +56,7 @@ export async function POST(
 
   // Write guard
   try {
-    await assertQboWriteEnabled(FIRM_ID)
+    await assertQboWriteEnabled(firmId)
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 403 })
   }
@@ -85,7 +91,7 @@ export async function POST(
   // Look up QBO item ID by name, creating it if it doesn't exist
   let itemId: string
   try {
-    itemId = await fetchOrCreateQboItemId(FIRM_ID, QBO_ITEM_NAME)
+    itemId = await fetchOrCreateQboItemId(firmId, QBO_ITEM_NAME)
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 422 })
   }
@@ -94,7 +100,7 @@ export async function POST(
   let invoiceResult: { invoiceId: string; invoiceNumber: string; intuitTid: string | null }
   try {
     invoiceResult = await createQboInvoice({
-      firmId: FIRM_ID,
+      firmId,
       qboCustomerId: customer.qbo_customer_id,
       itemId,
       qty: finalHours,
@@ -110,7 +116,7 @@ export async function POST(
   // Fetch customer email from QBO — required for the send call
   let customerEmail: string | null
   try {
-    customerEmail = await fetchQboCustomerEmail(FIRM_ID, customer.qbo_customer_id)
+    customerEmail = await fetchQboCustomerEmail(firmId, customer.qbo_customer_id)
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 })
   }
@@ -137,7 +143,7 @@ export async function POST(
   // Send invoice via QBO — if this fails, preserve the invoice ID so we can track it
   let sendTid: string | null = null
   try {
-    const sendResult = await sendQboInvoice(FIRM_ID, invoiceResult.invoiceId, customerEmail)
+    const sendResult = await sendQboInvoice(firmId, invoiceResult.invoiceId, customerEmail)
     sendTid = sendResult.intuitTid
   } catch (err) {
     await adminClient.from('invoice_drafts').update({
@@ -175,8 +181,8 @@ export async function POST(
   // Record the Intuit trace IDs alongside the send so they're available for
   // any future support escalation with Intuit.
   await logAudit({
-    firmId: FIRM_ID,
-    userId: user.id,
+    firmId,
+    userId,
     action: 'invoice_sent',
     entityType: 'invoice_draft',
     entityId: id,
