@@ -1628,7 +1628,7 @@ function ClientRulesView({
           </div>
           <div className="divide-y divide-gray-100">
 
-            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-3.5 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Default hourly rate</span>
               <div className="relative w-32">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">$</span>
@@ -1644,48 +1644,48 @@ function ClientRulesView({
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-3.5 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Default product / service</span>
               <input
                 type="text"
                 value={defaults.productService}
                 onChange={(e) => setDefaults((d) => ({ ...d, productService: e.target.value }))}
-                className="w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                className="w-full sm:w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
                 {...focusHandlers}
               />
             </div>
 
-            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-3.5 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Default invoice description</span>
               <input
                 type="text"
                 value={defaults.invoiceDescription}
                 onChange={(e) => setDefaults((d) => ({ ...d, invoiceDescription: e.target.value }))}
-                className="w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                className="w-full sm:w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
                 {...focusHandlers}
               />
             </div>
 
-            <div className="flex items-start justify-between px-6 py-3.5 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between px-6 py-3.5 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Rounding rule</span>
-              <div className="text-right">
+              <div className="sm:text-right">
                 <p className="text-sm text-gray-400">Round total monthly time up to next 15 minutes</p>
                 <p className="text-xs text-gray-400 mt-1 italic">Ceiling rounding is applied at month-end across the full month, not per entry.</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-3.5 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Invoice terms</span>
               <input
                 type="text"
                 value={defaults.invoiceTerms}
                 onChange={(e) => setDefaults((d) => ({ ...d, invoiceTerms: e.target.value }))}
-                className="w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
+                className="w-full sm:w-72 text-sm border border-gray-200 rounded-lg px-3 py-2 text-gray-900 focus:outline-none transition-shadow"
                 {...focusHandlers}
               />
             </div>
 
-            <div className="flex items-center justify-between px-6 py-3.5 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-3.5 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Due date offset</span>
               <div className="flex items-center gap-2">
                 <input
