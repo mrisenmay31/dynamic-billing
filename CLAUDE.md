@@ -328,8 +328,11 @@ If a customer in Dynamic Billing has no `qbo_customer_id` mapped, the send curre
 ### Known gap — QBO token revocation (post-UAT backlog)
 `src/lib/qbo/oauth.ts` has no revocation endpoint. Current "disconnect" flow only deletes stored tokens from the DB; it does not call `https://developer.api.intuit.com/v2/oauth2/tokens/revoke` to invalidate the token at Intuit. Implement post-UAT. See TODO comment in `src/lib/qbo/oauth.ts`.
 
-### Known gap — capture `intuit_tid` from QBO API responses (post-UAT backlog)
-Every QBO API response includes an `intuit_tid` header — Intuit's trace ID for support escalations. Currently not captured anywhere. Log alongside each QBO API call result in `integration_sync_logs` or `audit_logs`. See TODO comment in `src/lib/qbo/invoices.ts`.
+### ✅ Resolved — capture `intuit_tid` from QBO API responses (2026-06-17)
+Every QBO API response includes an `intuit_tid` header — Intuit's trace ID for support escalations. Now captured:
+- **`src/lib/qbo/invoices.ts`** — added `getIntuitTid(res)` + `throwQboError(label, res)` helpers. Every QBO failure now throws an Error whose message embeds `[intuit_tid: …]`, so the trace ID is persisted to `invoice_drafts.last_error` on any failed send. `createQboInvoice` and `sendQboInvoice` now return `intuitTid` on success.
+- **`src/app/api/invoice-drafts/[id]/send/route.ts`** — on successful send, writes an `invoice_sent` audit log to `audit_logs.details` with `create_intuit_tid` and `send_intuit_tid`.
+- **`src/app/api/qbo/items/route.ts`** — debug endpoint now returns `intuit_tid` in both success and error responses.
 
 ---
 

@@ -6,6 +6,20 @@ function qboBase(): string {
     : 'https://sandbox-quickbooks.api.intuit.com'
 }
 
+// Every QBO API response carries an `intuit_tid` header — Intuit's trace ID,
+// required when escalating a failed call to Intuit support.
+function getIntuitTid(res: Response): string | null {
+  return res.headers.get('intuit_tid')
+}
+
+// Throws an Error whose message embeds the intuit_tid so it is preserved
+// wherever the message is surfaced or persisted (e.g. invoice_drafts.last_error).
+async function throwQboError(label: string, res: Response): Promise<never> {
+  const text = await res.text()
+  const tid = getIntuitTid(res)
+  throw new Error(`${label} ${res.status}${tid ? ` [intuit_tid: ${tid}]` : ''}: ${text}`)
+}
+
 async function fetchIncomeAccountRef(
   accessToken: string,
   realmId: string
@@ -18,8 +32,7 @@ async function fetchIncomeAccountRef(
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QBO account query failed ${res.status}: ${text}`)
+    await throwQboError('QBO account query failed', res)
   }
 
   const data = await res.json() as { QueryResponse?: { Account?: { Id: string; Name: string }[] } }
@@ -44,8 +57,7 @@ export async function fetchOrCreateQboItemId(firmId: string, itemName: string): 
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QBO item query failed ${res.status}: ${text}`)
+    await throwQboError('QBO item query failed', res)
   }
 
   const data = await res.json() as { QueryResponse?: { Item?: { Id: string }[] } }
@@ -73,8 +85,7 @@ export async function fetchOrCreateQboItemId(firmId: string, itemName: string): 
   })
 
   if (!createRes.ok) {
-    const text = await createRes.text()
-    throw new Error(`QBO item creation failed ${createRes.status}: ${text}`)
+    await throwQboError('QBO item creation failed', createRes)
   }
 
   const created = await createRes.json() as { Item: { Id: string } }
@@ -95,6 +106,7 @@ export interface CreateInvoiceParams {
 export interface QboInvoiceResult {
   invoiceId: string
   invoiceNumber: string
+  intuitTid: string | null
 }
 
 export async function createQboInvoice(params: CreateInvoiceParams): Promise<QboInvoiceResult> {
@@ -132,14 +144,14 @@ export async function createQboInvoice(params: CreateInvoiceParams): Promise<Qbo
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QBO invoice creation failed ${res.status}: ${text}`)
+    await throwQboError('QBO invoice creation failed', res)
   }
 
   const data = await res.json() as { Invoice: { Id: string; DocNumber: string } }
   return {
     invoiceId: data.Invoice.Id,
     invoiceNumber: data.Invoice.DocNumber,
+    intuitTid: getIntuitTid(res),
   }
 }
 
@@ -155,8 +167,7 @@ export async function fetchQboCustomerEmail(
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QBO customer fetch failed ${res.status}: ${text}`)
+    await throwQboError('QBO customer fetch failed', res)
   }
 
   const data = await res.json() as { Customer?: { PrimaryEmailAddr?: { Address?: string } } }
@@ -167,7 +178,7 @@ export async function sendQboInvoice(
   firmId: string,
   invoiceId: string,
   sendTo: string
-): Promise<void> {
+): Promise<{ intuitTid: string | null }> {
   const { accessToken, realmId } = await getValidQboToken(firmId)
   const params = new URLSearchParams({ sendTo, minorversion: '75' })
   const url = `${qboBase()}/v3/company/${realmId}/invoice/${invoiceId}/send?${params}`
@@ -181,7 +192,8 @@ export async function sendQboInvoice(
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QBO invoice send failed ${res.status}: ${text}`)
+    await throwQboError('QBO invoice send failed', res)
   }
+
+  return { intuitTid: getIntuitTid(res) }
 }

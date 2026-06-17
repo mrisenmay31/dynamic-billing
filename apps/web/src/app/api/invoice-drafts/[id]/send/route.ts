@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabase/admin'
 import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
 import { fetchOrCreateQboItemId, fetchQboCustomerEmail, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
 import { recomputeBillingRunStatus } from '@/lib/billing/run-status'
+import { logAudit } from '@/lib/audit/log'
 
 const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
@@ -90,7 +91,7 @@ export async function POST(
   }
 
   // Create invoice in QBO
-  let invoiceResult: { invoiceId: string; invoiceNumber: string }
+  let invoiceResult: { invoiceId: string; invoiceNumber: string; intuitTid: string | null }
   try {
     invoiceResult = await createQboInvoice({
       firmId: FIRM_ID,
@@ -134,8 +135,10 @@ export async function POST(
   }
 
   // Send invoice via QBO — if this fails, preserve the invoice ID so we can track it
+  let sendTid: string | null = null
   try {
-    await sendQboInvoice(FIRM_ID, invoiceResult.invoiceId, customerEmail)
+    const sendResult = await sendQboInvoice(FIRM_ID, invoiceResult.invoiceId, customerEmail)
+    sendTid = sendResult.intuitTid
   } catch (err) {
     await adminClient.from('invoice_drafts').update({
       qbo_invoice_id: invoiceResult.invoiceId,
@@ -168,6 +171,22 @@ export async function POST(
     updated_at: now,
   }).eq('id', id)
   await recomputeBillingRunStatus(adminClient, draft.billing_run_id)
+
+  // Record the Intuit trace IDs alongside the send so they're available for
+  // any future support escalation with Intuit.
+  await logAudit({
+    firmId: FIRM_ID,
+    userId: user.id,
+    action: 'invoice_sent',
+    entityType: 'invoice_draft',
+    entityId: id,
+    details: {
+      qbo_invoice_id: invoiceResult.invoiceId,
+      qbo_invoice_number: invoiceResult.invoiceNumber,
+      create_intuit_tid: invoiceResult.intuitTid,
+      send_intuit_tid: sendTid,
+    },
+  })
 
   return NextResponse.json({
     invoiceId: invoiceResult.invoiceId,
