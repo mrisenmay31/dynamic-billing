@@ -569,9 +569,9 @@ function BillingRunDashboard({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="px-8 py-6 space-y-6 max-w-4xl">
+      <div className="px-4 md:px-8 py-6 space-y-6 max-w-4xl">
         <div>
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div>
               <h1 className="font-display text-2xl text-gray-900 leading-tight">{runMonthLabel(billingMonth)} Billing Run</h1>
               <p className="text-sm mt-0.5 text-gray-500">{entriesMonthLabel(billingMonth)} Time Entries</p>
@@ -586,7 +586,7 @@ function BillingRunDashboard({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: "Clients Ready for Review", value: templates.length.toString(), mono: false },
             { label: "Proposed Billing", value: formatCurrency(liveTotalBilling), mono: true },
@@ -843,7 +843,7 @@ function InvoiceQueueView({
 
       {/* Header */}
       <header style={{ backgroundColor: "#2D6A4F" }}>
-        <div className="px-8 py-5 flex items-center justify-between">
+        <div className="px-4 md:px-8 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl text-white leading-tight">Invoice Queue</h1>
             <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>{entriesMonthLabel(billingMonth)} · Billing Period</p>
@@ -851,7 +851,7 @@ function InvoiceQueueView({
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-colors disabled:opacity-60"
+            className="flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-colors disabled:opacity-60 w-full sm:w-auto"
             style={{ borderColor: "rgba(216,243,220,0.5)", color: "white" }}
             onMouseEnter={(e) => { if (!generating) { e.currentTarget.style.backgroundColor = "white"; e.currentTarget.style.color = "#2D6A4F"; } }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "white"; }}
@@ -878,9 +878,9 @@ function InvoiceQueueView({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto pb-24">
-        <div className="px-8 py-6 space-y-4 max-w-4xl">
+        <div className="px-4 md:px-8 py-6 space-y-4 max-w-4xl">
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatCard label="Drafts Ready" value={pendingTemplates.length.toString()} />
             <StatCard label="Total Hours" value={`${formatHours(allTotalHours)} hrs`} mono />
             <StatCard label="Total Billed" value={formatCurrency(allTotalBilled)} mono />
@@ -1146,7 +1146,7 @@ function InvoiceQueueView({
                         </div>
 
                         {/* Final qty + Manual adj + Rate */}
-                        <div className="flex gap-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
                           <div className="flex-1">
                             <label className="block text-xs font-medium text-gray-600 mb-1.5">Final invoice quantity (hrs)</label>
                             <div className="relative">
@@ -1284,8 +1284,8 @@ function InvoiceQueueView({
 
       {/* Bottom action bar */}
       <div className="border-t border-gray-200 bg-white shadow-lg z-40">
-        <div className="px-8 py-4 flex items-center justify-between max-w-4xl">
-          <div className="flex items-baseline gap-2">
+        <div className="px-4 md:px-8 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-w-4xl">
+          <div className="flex items-baseline gap-2 flex-wrap">
             {pendingTemplates.length > 0 ? (
               <>
                 <span className="text-sm text-gray-500">
@@ -1303,7 +1303,7 @@ function InvoiceQueueView({
           <button
             onClick={createAllDrafts}
             disabled={pendingTemplates.length === 0 || sendingAll}
-            className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full sm:w-auto"
             style={{ backgroundColor: pendingTemplates.length > 0 ? "#2D6A4F" : "#9ca3af" }}
             onMouseEnter={(e) => { if (pendingTemplates.length > 0 && !sendingAll) e.currentTarget.style.backgroundColor = "#40916C"; }}
             onMouseLeave={(e) => { if (pendingTemplates.length > 0) e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
@@ -1378,7 +1378,7 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Page header */}
-      <div className="px-8 pt-6 pb-4">
+      <div className="px-4 md:px-8 pt-6 pb-4">
         <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
         <p className="text-sm text-gray-500 mt-0.5">{entriesMonthLabel(billingMonth)} Import — QuickBooks Time</p>
 
@@ -1417,7 +1417,7 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
 
       {/* Sticky filter bar */}
       <div
-        className="sticky top-0 z-20 bg-white border-b border-gray-200 px-8 py-3"
+        className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 md:px-8 py-3"
         style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
       >
         <div className="flex items-center gap-2 flex-wrap">
@@ -1495,7 +1495,7 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
       </div>
 
       {/* Table */}
-      <div className="px-8 pb-10 pt-4">
+      <div className="px-4 md:px-8 pb-10 pt-4">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Search className="w-8 h-8 text-gray-300 mb-3" />
@@ -1509,7 +1509,8 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
             </button>
           </div>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <table className="w-full min-w-[760px]">
             <thead>
               <tr className="border-b border-gray-200">
                 <th className="py-3 px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Date</th>
@@ -1566,6 +1567,7 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
               </tr>
             </tfoot>
           </table>
+          </div>
         )}
       </div>
     </div>
@@ -1607,7 +1609,7 @@ function ClientRulesView({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="px-8 py-6 space-y-6 max-w-4xl">
+      <div className="px-4 md:px-8 py-6 space-y-6 max-w-4xl">
 
         {/* Page header */}
         <div>
@@ -1921,7 +1923,7 @@ function ClientMappingView({
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="px-8 py-6 space-y-6 max-w-4xl">
+      <div className="px-4 md:px-8 py-6 space-y-6 max-w-4xl">
 
         {/* Header */}
         <div>
@@ -1933,7 +1935,7 @@ function ClientMappingView({
 
         {/* Panel A: QBO Customer Links */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="px-6 py-4 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">QuickBooks Online — Customer Links</p>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -1943,7 +1945,7 @@ function ClientMappingView({
             <button
               onClick={handleSync}
               disabled={syncing || !qboConnected}
-              className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="shrink-0 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
               style={{ backgroundColor: "#2D6A4F", color: "white" }}
             >
               <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
@@ -1983,7 +1985,8 @@ function ClientMappingView({
             </div>
           )}
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
@@ -2057,6 +2060,7 @@ function ClientMappingView({
               })}
             </tbody>
           </table>
+          </div>
 
           {qboCustomers.length === 0 && (
             <div className="px-6 py-4 text-xs text-gray-400 border-t border-gray-100">
@@ -2082,7 +2086,8 @@ function ClientMappingView({
             </p>
           </div>
 
-          <table className="w-full text-sm opacity-40 pointer-events-none select-none">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm opacity-40 pointer-events-none select-none min-w-[560px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">QB Time Jobcode</th>
@@ -2111,6 +2116,7 @@ function ClientMappingView({
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
       </div>
@@ -2131,7 +2137,7 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="px-8 py-6 space-y-6 max-w-4xl">
+      <div className="px-4 md:px-8 py-6 space-y-6 max-w-4xl">
 
         {/* Page header */}
         <div>
