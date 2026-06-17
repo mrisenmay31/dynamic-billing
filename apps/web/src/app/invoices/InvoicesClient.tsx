@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Lock,
+  Menu,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -2390,6 +2391,8 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
   const router = useRouter();
   const billingMonth = currentRun?.billingMonth ?? null;
   const [activeView, setActiveView] = useState<NavView>("billing-run");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const activeNavLabel = NAV_ITEMS.find((n) => n.view === activeView)?.label ?? "";
   const [sharedHighTouch, setSharedHighTouch] = useState<Record<string, boolean>>(
     Object.fromEntries(templates.map((t) => [t.id, false]))
   );
@@ -2466,10 +2469,31 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar */}
-      <aside className="flex flex-col shrink-0 w-56" style={{ backgroundColor: "#2D6A4F" }}>
-        <div className="px-5 py-5 border-b" style={{ borderColor: "rgba(216,243,220,0.2)" }}>
+      {/* Mobile drawer backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar — static on desktop, off-canvas drawer on mobile */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col transform transition-transform duration-200 md:static md:w-56 md:shrink-0 md:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{ backgroundColor: "#2D6A4F" }}
+      >
+        <div className="px-5 py-5 border-b flex items-center justify-between" style={{ borderColor: "rgba(216,243,220,0.2)" }}>
           <p className="font-display text-white text-base leading-snug">{firmName}</p>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden text-white/80 hover:text-white p-1 -mr-1"
+            aria-label="Close menu"
+          >
+            <X size={20} />
+          </button>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-0.5">
           {NAV_ITEMS.map(({ view, label, Icon }) => {
@@ -2477,7 +2501,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
             return (
               <button
                 key={view}
-                onClick={() => setActiveView(view)}
+                onClick={() => { setActiveView(view); setSidebarOpen(false); }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-left transition-colors"
                 style={{ backgroundColor: active ? "rgba(255,255,255,0.15)" : "transparent", color: active ? "white" : "#D8F3DC" }}
                 onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.08)"; }}
@@ -2493,6 +2517,18 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Mobile top bar */}
+        <header className="md:hidden flex items-center gap-3 px-4 h-14 shrink-0 border-b border-gray-200 bg-white">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-gray-700 p-1 -ml-1"
+            aria-label="Open menu"
+          >
+            <Menu size={22} />
+          </button>
+          <span className="font-display text-gray-900 text-lg truncate">{activeNavLabel}</span>
+        </header>
+
         {activeView === "invoice-queue" && (
           <InvoiceQueueView
             sharedHighTouch={sharedHighTouch}
