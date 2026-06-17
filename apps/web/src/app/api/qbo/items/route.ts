@@ -24,13 +24,18 @@ export async function GET() {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
   })
 
+  const intuitTid = res.headers.get('intuit_tid')
+
   if (!res.ok) {
     const text = await res.text()
-    return NextResponse.json({ error: `QBO query failed ${res.status}: ${text}` }, { status: 502 })
+    return NextResponse.json(
+      { error: `QBO query failed ${res.status}: ${text}`, intuit_tid: intuitTid },
+      { status: 502 }
+    )
   }
 
   const data = await res.json() as { QueryResponse?: { Item?: { Id: string; Name: string; Type: string }[] } }
   const items = (data.QueryResponse?.Item ?? []).map((i) => ({ id: i.Id, name: i.Name, type: i.Type }))
 
-  return NextResponse.json({ items })
+  return NextResponse.json({ items, intuit_tid: intuitTid })
 }
