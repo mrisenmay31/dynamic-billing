@@ -601,25 +601,28 @@ function BillingRunDashboard({
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-5">Billing Run Progress</p>
-          <div className="flex items-start">
+          <div className="flex flex-col sm:flex-row sm:items-start">
             {steps.map((step, i) => (
-              <div key={step.label} className="flex items-start flex-1 relative">
+              <div key={step.label} className="flex items-start gap-3 sm:gap-0 sm:flex-col sm:items-center sm:flex-1 relative pb-6 last:pb-0 sm:pb-0">
                 {i < steps.length - 1 && (
-                  <div className="absolute top-3.5 left-1/2 w-full h-px" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : "#e5e7eb", transform: "translateY(-50%)" }} />
+                  <>
+                    {/* vertical connector (mobile) */}
+                    <div className="sm:hidden absolute left-3.5 top-7 -translate-x-1/2 w-px h-[calc(100%-1.75rem)]" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : "#e5e7eb" }} />
+                    {/* horizontal connector (desktop) */}
+                    <div className="hidden sm:block absolute top-3.5 left-1/2 w-full h-px" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : "#e5e7eb", transform: "translateY(-50%)" }} />
+                  </>
                 )}
-                <div className="flex flex-col items-center flex-1 relative z-10">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : step.state === "active" ? "#52B788" : "white", border: step.state === "upcoming" ? "2px solid #e5e7eb" : "none" }}>
-                    {step.state === "done" && (
-                      <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                    {step.state === "active" && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
-                  </div>
-                  <p className="mt-2 text-xs text-center leading-snug px-1" style={{ color: step.state === "upcoming" ? "#9ca3af" : "#111827", fontWeight: step.state === "active" ? 600 : 400 }}>
-                    {step.label}
-                  </p>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 relative z-10" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : step.state === "active" ? "#52B788" : "white", border: step.state === "upcoming" ? "2px solid #e5e7eb" : "none" }}>
+                  {step.state === "done" && (
+                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                  {step.state === "active" && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
                 </div>
+                <p className="text-xs leading-snug relative z-10 pt-1 sm:pt-0 sm:mt-2 sm:text-center sm:px-1" style={{ color: step.state === "upcoming" ? "#9ca3af" : "#111827", fontWeight: step.state === "active" ? 600 : 400 }}>
+                  {step.label}
+                </p>
               </div>
             ))}
           </div>
@@ -2152,9 +2155,9 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
           </div>
           <div className="divide-y divide-gray-100">
 
-            <div className="flex items-center justify-between px-6 py-4 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-4 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Time import source</span>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-2 flex-wrap sm:justify-end">
                 <span className="text-sm text-gray-800">QuickBooks Time</span>
                 {qbTimeConnected ? (
                   <>
@@ -2191,9 +2194,9 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-4 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-4 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Invoice destination</span>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-2 flex-wrap sm:justify-end">
                 <span className="text-sm text-gray-800">QuickBooks Online</span>
                 {qboConnected ? (
                   <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#DCFCE7", color: "#166534" }}>
@@ -2217,9 +2220,9 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-4 gap-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-6 py-4 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">Payment portal</span>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex items-center gap-2 flex-wrap sm:justify-end">
                 <span className="text-sm text-gray-800">BillerGenie</span>
                 <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
                   Syncs via Premium Plan
@@ -2228,9 +2231,9 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
               </div>
             </div>
 
-            <div className="flex items-start justify-between px-6 py-4 gap-6">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between px-6 py-4 sm:gap-6">
               <span className="text-sm text-gray-500 shrink-0">BillerGenie plan</span>
-              <div className="text-right">
+              <div className="sm:text-right">
                 <p className="text-sm text-gray-800">Premium</p>
                 <p className="font-mono text-xs text-gray-400 mt-0.5">$69.95/month + 0.50% per invoice collected</p>
               </div>
