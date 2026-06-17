@@ -4,9 +4,8 @@ import { getQboConnectionStatus } from '@/lib/qbo/connection'
 import { getQbTimeConnectionStatus } from '@/lib/qb-time/auth'
 import InvoicesClient from './InvoicesClient'
 import type { InvoicesClientProps } from './InvoicesClient'
+import { adminClient } from '@/lib/supabase/admin'
 
-
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const DEFAULT_RATE = 125
 
 function secondsToDuration(seconds: number): string {
@@ -48,10 +47,23 @@ export default async function InvoicesPage(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  // Resolve the firm for the logged-in user (multi-tenant). A logged-in user
+  // with no firm membership is a misconfiguration, not an auth failure — surface
+  // it rather than redirecting to /login (which would loop against middleware).
+  const { data: firmUser } = await adminClient
+    .from('firm_users')
+    .select('firm_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (!firmUser) {
+    throw new Error('Your account is not linked to a firm. Contact support@ctaintegrity.com.')
+  }
+  const firmId = firmUser.firm_id
+
   const { data: firm } = await supabase
     .from('firms')
     .select('name, default_hourly_rate')
-    .eq('id', FIRM_ID)
+    .eq('id', firmId)
     .single()
 
   const defaultRate = firm?.default_hourly_rate ?? DEFAULT_RATE
@@ -60,7 +72,7 @@ export default async function InvoicesPage(
   const runQuery = supabase
     .from('billing_runs')
     .select('id, billing_month, status')
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
 
   const { data: billingRun } = month
     ? await runQuery.eq('billing_month', month).maybeSingle()
@@ -69,7 +81,7 @@ export default async function InvoicesPage(
   const { data: allRuns } = await supabase
     .from('billing_runs')
     .select('billing_month, status')
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
     .order('billing_month', { ascending: false })
 
   const { data: drafts } = await supabase
@@ -138,14 +150,14 @@ export default async function InvoicesPage(
   )
 
   const [{ connected: qboConnected }, { connected: qbTimeConnected, connectedAt: qbTimeConnectedAt }] = await Promise.all([
-    getQboConnectionStatus(FIRM_ID),
-    getQbTimeConnectionStatus(FIRM_ID),
+    getQboConnectionStatus(firmId),
+    getQbTimeConnectionStatus(firmId),
   ])
 
   const { data: customers } = await supabase
     .from('customers')
     .select('id, display_name, qbo_customer_id')
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
     .order('display_name')
 
   const defaultGenerateMonth = getPreviousMonthISO()

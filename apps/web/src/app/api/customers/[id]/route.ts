@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
-
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
+import { getFirmContext } from '@/lib/auth/firm'
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { firmId } = ctx
 
   const { id } = await params
   const body = await request.json()
@@ -20,7 +20,7 @@ export async function PATCH(
     .from('customers')
     .update({ qbo_customer_id, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

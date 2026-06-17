@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getValidQboToken } from '@/lib/qbo/connection'
-import { redirect } from 'next/navigation'
-
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
+import { getFirmContext } from '@/lib/auth/firm'
 
 function qboBase(): string {
   return process.env.INTUIT_ENVIRONMENT === 'production'
@@ -13,10 +11,10 @@ function qboBase(): string {
 
 export async function GET() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { accessToken, realmId } = await getValidQboToken(FIRM_ID)
+  const { accessToken, realmId } = await getValidQboToken(ctx.firmId)
   const query = encodeURIComponent('SELECT * FROM Item MAXRESULTS 100')
   const url = `${qboBase()}/v3/company/${realmId}/query?query=${query}&minorversion=75`
 

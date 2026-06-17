@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
-
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
+import { getFirmContext } from '@/lib/auth/firm'
 
 export async function GET() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { firmId } = ctx
 
   const { data } = await adminClient
     .from('customer_mappings')
     .select('*, customers(display_name)')
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
     .order('created_at')
 
   return NextResponse.json({ mappings: data ?? [] })
@@ -20,8 +20,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { firmId } = ctx
 
   const { customerId, qbtJobcodeId, qbtJobcodeName } = await request.json() as {
     customerId: string
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
     .from('customer_mappings')
     .upsert(
       {
-        firm_id: FIRM_ID,
+        firm_id: firmId,
         customer_id: customerId,
         qb_time_source_type: 'jobcode',
         qb_time_source_id: qbtJobcodeId,
@@ -51,8 +52,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { firmId } = ctx
 
   const { id } = await request.json() as { id: string }
 
@@ -60,7 +62,7 @@ export async function DELETE(request: Request) {
     .from('customer_mappings')
     .delete()
     .eq('id', id)
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

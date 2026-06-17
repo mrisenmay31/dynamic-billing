@@ -3,13 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { computeBillingDrafts } from '@/lib/billing/engine'
 import { logAudit } from '@/lib/audit/log'
-
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
+import { getFirmContext } from '@/lib/auth/firm'
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { userId, firmId } = ctx
 
   const body = await req.json().catch(() => ({}))
   const billingMonth: string = body.billingMonth ?? new Date().toISOString().slice(0, 7) + '-01'
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   const { data: existing } = await adminClient
     .from('billing_runs')
     .select('id, billing_month, status, invoice_count, total_amount')
-    .eq('firm_id', FIRM_ID)
+    .eq('firm_id', firmId)
     .eq('billing_month', billingMonth)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const { data: firm, error: firmError } = await adminClient
     .from('firms')
     .select('default_hourly_rate, default_invoice_description')
-    .eq('id', FIRM_ID)
+    .eq('id', firmId)
     .single()
 
   if (firmError || !firm) {
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   try {
     drafts = await computeBillingDrafts(
       adminClient,
-      FIRM_ID,
+      firmId,
       billingMonth,
       firm.default_hourly_rate,
       firm.default_invoice_description
@@ -64,12 +64,12 @@ export async function POST(req: NextRequest) {
   const { data: run, error: runError } = await adminClient
     .from('billing_runs')
     .insert({
-      firm_id: FIRM_ID,
+      firm_id: firmId,
       billing_month: billingMonth,
       status: 'pending',
       trigger: 'manual',
       generated_at: new Date().toISOString(),
-      generated_by: user.id,
+      generated_by: userId,
       invoice_count: drafts.length,
       total_amount: totalAmount,
     })
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   // Write invoice drafts
   const draftRows = drafts.map((d) => ({
-    firm_id: FIRM_ID,
+    firm_id: firmId,
     billing_run_id: run.id,
     customer_id: d.customerId,
     status: 'needs_review',
@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
   }
 
   await logAudit({
-    firmId: FIRM_ID,
-    userId: user.id,
+    firmId,
+    userId,
     action: 'billing_run_generated',
     entityType: 'billing_runs',
     entityId: run.id,

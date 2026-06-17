@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { adminClient } from '@/lib/supabase/admin'
 import { getValidQbTimeToken } from '@/lib/qb-time/auth'
+import { getFirmContext } from '@/lib/auth/firm'
 
-const FIRM_ID = '00000000-0000-0000-0000-000000000001'
 const QB_TIME_BASE = 'https://rest.tsheets.com/api/v1'
 
 interface QbJobcode {
@@ -45,22 +45,23 @@ async function fetchAllJobcodes(token: string): Promise<QbJobcode[]> {
 
 export async function POST(): Promise<NextResponse> {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getFirmContext(supabase)
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { firmId } = ctx
 
   const startedAt = new Date().toISOString()
   let added = 0
   let skipped = 0
 
   try {
-    const token = await getValidQbTimeToken(FIRM_ID)
+    const token = await getValidQbTimeToken(firmId)
     const jobcodes = await fetchAllJobcodes(token)
 
     for (const jc of jobcodes) {
       const { data: existing } = await adminClient
         .from('customer_mappings')
         .select('id')
-        .eq('firm_id', FIRM_ID)
+        .eq('firm_id', firmId)
         .eq('qb_time_source_type', 'jobcode')
         .eq('qb_time_source_id', String(jc.id))
         .maybeSingle()
@@ -77,7 +78,7 @@ export async function POST(): Promise<NextResponse> {
         const { data: customers } = await adminClient
           .from('customers')
           .select('id, display_name')
-          .eq('firm_id', FIRM_ID)
+          .eq('firm_id', firmId)
 
         // Auto-match by name (case-insensitive)
         const match = (customers ?? []).find(
@@ -88,7 +89,7 @@ export async function POST(): Promise<NextResponse> {
           const { error } = await adminClient
             .from('customer_mappings')
             .insert({
-              firm_id: FIRM_ID,
+              firm_id: firmId,
               customer_id: match.id,
               qb_time_source_type: 'jobcode',
               qb_time_source_id: String(jc.id),
@@ -103,7 +104,7 @@ export async function POST(): Promise<NextResponse> {
     }
 
     await adminClient.from('integration_sync_logs').insert({
-      firm_id: FIRM_ID,
+      firm_id: firmId,
       integration: 'qb_time',
       operation: 'sync_jobcodes',
       status: 'success',
@@ -121,7 +122,7 @@ export async function POST(): Promise<NextResponse> {
     console.error('[sync-jobcodes]', err)
 
     await adminClient.from('integration_sync_logs').insert({
-      firm_id: FIRM_ID,
+      firm_id: firmId,
       integration: 'qb_time',
       operation: 'sync_jobcodes',
       status: 'error',
