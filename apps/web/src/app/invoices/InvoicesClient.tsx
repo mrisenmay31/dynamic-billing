@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -1903,12 +1903,23 @@ function ClientRulesView({
 }
 
 /* ─── Client Mapping view ────────────────────────────────────── */
+interface JobcodeRow {
+  jobcodeId: string;
+  jobcodeName: string;
+  entryCount: number;
+  customerId: string | null;
+  customerName: string | null;
+  qboCustomerId: string | null;
+}
+
 function ClientMappingView({
   initialCustomers,
   qboConnected,
+  qbTimeConnected,
 }: {
   initialCustomers: DbCustomer[];
   qboConnected: boolean;
+  qbTimeConnected: boolean;
 }) {
   const [customers, setCustomers] = useState<DbCustomer[]>(initialCustomers);
   const [qboCustomers, setQboCustomers] = useState<QboCustomer[]>([]);
@@ -1916,6 +1927,67 @@ function ClientMappingView({
   const [syncMessage, setSyncMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [pendingSelections, setPendingSelections] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  // QB Time jobcode mapping (Panel B)
+  const [jobcodes, setJobcodes] = useState<JobcodeRow[]>([]);
+  const [jobcodePending, setJobcodePending] = useState<Record<string, string>>({});
+  const [jobcodeSaving, setJobcodeSaving] = useState<string | null>(null);
+  const [jobcodeMessage, setJobcodeMessage] = useState<{ text: string; ok: boolean } | null>(null);
+
+  async function loadJobcodes() {
+    try {
+      const res = await fetch("/api/qb-time/jobcodes");
+      if (!res.ok) return;
+      const json = await res.json();
+      setJobcodes((json.jobcodes as JobcodeRow[]) ?? []);
+    } catch {
+      // Non-fatal — panel just shows no jobcodes.
+    }
+  }
+
+  useEffect(() => {
+    if (qbTimeConnected) loadJobcodes();
+  }, [qbTimeConnected]);
+
+  async function handleAssignJobcode(jc: JobcodeRow) {
+    const qboId = jobcodePending[jc.jobcodeId];
+    if (!qboId) return;
+    const qboName = qboCustomers.find((q) => q.id === qboId)?.displayName ?? "";
+    setJobcodeSaving(jc.jobcodeId);
+    setJobcodeMessage(null);
+    try {
+      const res = await fetch("/api/qb-time/jobcodes/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobcodeId: jc.jobcodeId,
+          jobcodeName: jc.jobcodeName,
+          qboCustomerId: qboId,
+          qboCustomerName: qboName,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json.error as string) ?? "Mapping failed");
+
+      // Reflect the new/linked customer in Panel A, then refresh jobcode statuses.
+      setCustomers((prev) =>
+        prev.some((c) => c.qboCustomerId === qboId)
+          ? prev
+          : [...prev, { id: json.customerId as string, displayName: qboName, qboCustomerId: qboId }]
+      );
+      setJobcodePending((prev) => {
+        const next = { ...prev };
+        delete next[jc.jobcodeId];
+        return next;
+      });
+      await loadJobcodes();
+      setJobcodeMessage({ text: `Mapped “${jc.jobcodeName}” → ${qboName}.`, ok: true });
+    } catch (err) {
+      setJobcodeMessage({ text: (err as Error).message, ok: false });
+    } finally {
+      setJobcodeSaving(null);
+    }
+  }
 
   async function handleSync() {
     setSyncing(true);
@@ -2133,49 +2205,128 @@ function ClientMappingView({
           <div className="px-6 py-4 border-b border-gray-100">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">QB Time — Jobcode Mapping</p>
             <p className="text-xs text-gray-400 mt-0.5">
-              Each QB Time jobcode must map to a billing client so time entries are routed correctly.
+              Map each QB Time jobcode to the QuickBooks Online customer it bills to. We&apos;ll create the
+              client record and route its time entries automatically.
             </p>
           </div>
 
-          <div className="flex items-start gap-3 px-6 py-4 bg-slate-50 border-b border-slate-100">
-            <Lock size={15} className="text-slate-400 mt-0.5 shrink-0" />
-            <p className="text-sm text-slate-500">
-              QB Time is not connected yet. Once connected, jobcodes will be imported here for mapping.
-              Connect QB Time in Settings when your account is ready.
-            </p>
-          </div>
+          {!qbTimeConnected ? (
+            <div className="flex items-start gap-3 px-6 py-4 bg-slate-50 border-b border-slate-100">
+              <Lock size={15} className="text-slate-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-slate-500">
+                QB Time is not connected yet. Connect it in Settings, then sync to import jobcodes here.
+              </p>
+            </div>
+          ) : jobcodes.length === 0 ? (
+            <div className="px-6 py-4 text-xs text-gray-400 border-b border-gray-100">
+              No jobcodes imported yet. Sync QB Time (Settings → Sync Now) to pull in time entries, then
+              they&apos;ll appear here for mapping.
+            </div>
+          ) : (
+            <>
+              {qboCustomers.length === 0 && (
+                <div className="flex items-start gap-3 px-6 py-3 bg-amber-50 border-b border-amber-100 text-sm text-amber-700">
+                  <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                  <span>
+                    Click &quot;Sync from QuickBooks Online&quot; above to load your QBO customers, then
+                    choose one for each jobcode.
+                  </span>
+                </div>
+              )}
 
-          <div className="overflow-x-auto">
-          <table className="w-full text-sm opacity-40 pointer-events-none select-none min-w-[560px]">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">QB Time Jobcode</th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Maps To (Client)</th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {[
-                "Knoxville Title Agency LLC",
-                "Baine & Company",
-                "Knox Physical Therapy",
-              ].map((name) => (
-                <tr key={name}>
-                  <td className="px-6 py-3.5 font-mono text-xs text-gray-500">{name}</td>
-                  <td className="px-6 py-3.5 text-gray-400">—</td>
-                  <td className="px-6 py-3.5">
-                    <span
-                      className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: "#F1F5F9", color: "#64748B" }}
-                    >
-                      Pending
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
+              {jobcodeMessage && (
+                <div
+                  className="flex items-start gap-3 px-6 py-3 border-b text-sm"
+                  style={{
+                    backgroundColor: jobcodeMessage.ok ? "#F0FDF4" : "#FEF2F2",
+                    borderColor: jobcodeMessage.ok ? "#BBF7D0" : "#FECACA",
+                    color: jobcodeMessage.ok ? "#166534" : "#991B1B",
+                  }}
+                >
+                  {jobcodeMessage.ok
+                    ? <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
+                    : <AlertCircle size={15} className="mt-0.5 shrink-0" />}
+                  {jobcodeMessage.text}
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">QB Time Jobcode</th>
+                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Maps To (QBO Customer)</th>
+                    <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {jobcodes.map((jc) => {
+                    const pending = jobcodePending[jc.jobcodeId];
+                    const currentValue = pending ?? jc.qboCustomerId ?? "";
+                    const hasPending = pending !== undefined && pending !== (jc.qboCustomerId ?? "");
+                    return (
+                      <tr key={jc.jobcodeId} className="hover:bg-gray-50">
+                        <td className="px-6 py-3.5">
+                          <div className="font-medium text-gray-900">{jc.jobcodeName}</div>
+                          <div className="text-xs text-gray-400">
+                            {jc.entryCount} {jc.entryCount === 1 ? "entry" : "entries"}
+                          </div>
+                        </td>
+                        <td className="px-6 py-3.5">
+                          <select
+                            value={currentValue}
+                            disabled={qboCustomers.length === 0}
+                            onChange={(e) =>
+                              setJobcodePending((prev) => ({ ...prev, [jc.jobcodeId]: e.target.value }))
+                            }
+                            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-600/20 focus:border-green-600 w-full max-w-xs disabled:bg-gray-50 disabled:text-gray-400"
+                          >
+                            <option value="">— select QBO customer —</option>
+                            {qboCustomers.map((q) => (
+                              <option key={q.id} value={q.id}>{q.displayName}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-6 py-3.5">
+                          {jc.customerId ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}
+                            >
+                              <CheckCircle2 size={11} />
+                              Mapped
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: "#FFF3E0", color: "#C2410C" }}
+                            >
+                              <AlertCircle size={11} />
+                              Unmapped
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-3.5 text-right">
+                          {hasPending && (
+                            <button
+                              onClick={() => handleAssignJobcode(jc)}
+                              disabled={jobcodeSaving === jc.jobcodeId}
+                              className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                              style={{ backgroundColor: "#2D6A4F", color: "white" }}
+                            >
+                              {jobcodeSaving === jc.jobcodeId ? "Saving…" : "Save"}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              </div>
+            </>
+          )}
         </div>
 
       </div>
@@ -2635,7 +2786,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
           />
         )}
         {activeView === "client-mapping" && (
-          <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} />
+          <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} />
         )}
         {activeView === "settings" && (
           <SettingsView
