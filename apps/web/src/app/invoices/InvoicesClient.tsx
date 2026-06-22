@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -512,6 +512,38 @@ function MonthSelectorDropdown({
   );
 }
 
+// Controlled dropdown for picking which billing period to generate drafts for.
+// Options are YYYY-MM-01 strings (newest first), built from synced time entries.
+function GenerateMonthDropdown({
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  if (options.length === 0) return null;
+  return (
+    <div className="relative shrink-0">
+      <select
+        aria-label="Select billing period to generate"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="appearance-none text-sm font-medium border border-gray-200 rounded-lg pl-3 pr-8 py-2 sm:py-1.5 bg-white text-gray-700 focus:outline-none focus:border-[#40916C] cursor-pointer disabled:opacity-60"
+      >
+        {options.map((m) => (
+          <option key={m} value={m}>{dropdownLabel(m)}</option>
+        ))}
+      </select>
+      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+    </div>
+  );
+}
+
 function inputFocusHandlers() {
   return {
     onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -533,6 +565,10 @@ function BillingRunDashboard({
   availableRuns,
   allEntries,
   onGenerate,
+  generateMonth,
+  generateMonthOptions,
+  onGenerateMonthChange,
+  generating,
 }: {
   invoiceStates: Record<string, InvoiceState>;
   templates: InvoiceTemplate[];
@@ -540,25 +576,52 @@ function BillingRunDashboard({
   availableRuns: { billingMonth: string; status: string }[];
   allEntries: FlatEntry[];
   onGenerate: () => Promise<void>;
+  generateMonth: string;
+  generateMonthOptions: string[];
+  onGenerateMonthChange: (v: string) => void;
+  generating: boolean;
 }) {
   const liveRoundedHours = templates.reduce((sum, t) => sum + invoiceStates[t.id].hours, 0);
   const liveTotalBilling = templates.reduce((sum, t) => sum + invoiceStates[t.id].hours * invoiceStates[t.id].rate, 0);
 
   if (!billingMonth) {
+    const hasSyncedEntries = generateMonthOptions.length > 0;
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center max-w-sm px-6">
           <h2 className="font-display text-2xl text-gray-800 mb-2">No Billing Run Yet</h2>
           <p className="text-sm text-gray-400 mb-6">
-            Generate your first billing run to get started. It will pull approved time entries from QuickBooks Time for the previous month.
+            Generate your first billing run to get started. Pick the billing period below — it covers approved time entries from QuickBooks Time for that month.
           </p>
-          <button
-            onClick={onGenerate}
-            className="flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white mx-auto"
-            style={{ backgroundColor: "#2D6A4F" }}
-          >
-            Generate Drafts
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <GenerateMonthDropdown
+              value={generateMonth}
+              options={generateMonthOptions}
+              onChange={onGenerateMonthChange}
+              disabled={generating}
+            />
+            <button
+              onClick={onGenerate}
+              disabled={generating || !hasSyncedEntries}
+              className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white disabled:opacity-60"
+              style={{ backgroundColor: "#2D6A4F" }}
+            >
+              {generating ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Generating…
+                </>
+              ) : (
+                "Generate Drafts"
+              )}
+            </button>
+          </div>
+          {!hasSyncedEntries && (
+            <p className="text-xs text-gray-400 mt-4">Sync time entries from QuickBooks Time first (Settings → Sync Now).</p>
+          )}
         </div>
       </div>
     );
@@ -701,6 +764,11 @@ function InvoiceQueueView({
   onGenerate,
   firmName,
   billingMonth,
+  addToast,
+  generateMonth,
+  generateMonthOptions,
+  onGenerateMonthChange,
+  generating,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
@@ -714,9 +782,12 @@ function InvoiceQueueView({
   onGenerate: () => Promise<void>;
   firmName: string;
   billingMonth: string;
+  addToast: (message: string) => void;
+  generateMonth: string;
+  generateMonthOptions: string[];
+  onGenerateMonthChange: (v: string) => void;
+  generating: boolean;
 }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const [generating, setGenerating] = useState(false);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [sendingAll, setSendingAll] = useState(false);
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -727,12 +798,6 @@ function InvoiceQueueView({
   const allTotalBilled = templates.reduce((sum, t) => sum + states[t.id].hours * states[t.id].rate, 0);
   const pendingTemplates = templates.filter((t) => !isDone(t.id));
   const pendingTotal = pendingTemplates.reduce((sum, t) => sum + states[t.id].hours * states[t.id].rate, 0);
-
-  function addToast(message: string) {
-    const id = Math.random().toString(36).slice(2);
-    setToasts((prev) => [...prev, { id, message }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
-  }
 
   function debouncedPatch(draftId: string, body: { rounded_hours?: number; description?: string }) {
     clearTimeout(debounceTimers.current[draftId]);
@@ -821,38 +886,10 @@ function InvoiceQueueView({
     }
   }
 
-  async function handleGenerate() {
-    if (generating) return;
-    setGenerating(true);
-    try {
-      await onGenerate();
-      addToast("Billing drafts generated. Review invoices below.");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to generate drafts";
-      addToast(message);
-    } finally {
-      setGenerating(false);
-    }
-  }
-
   const focusHandlers = inputFocusHandlers();
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Toasts */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
-        {toasts.map((toast) => (
-          <div key={toast.id} className="bg-gray-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl max-w-sm animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20" style={{ color: "#52B788" }}>
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              {toast.message}
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Header */}
       <header style={{ backgroundColor: "#2D6A4F" }}>
         <div className="px-4 md:px-8 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -860,31 +897,39 @@ function InvoiceQueueView({
             <h1 className="font-display text-2xl text-white leading-tight">Invoice Queue</h1>
             <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>{entriesMonthLabel(billingMonth)} · Billing Period</p>
           </div>
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-colors disabled:opacity-60 w-full sm:w-auto"
-            style={{ borderColor: "rgba(216,243,220,0.5)", color: "white" }}
-            onMouseEnter={(e) => { if (!generating) { e.currentTarget.style.backgroundColor = "white"; e.currentTarget.style.color = "#2D6A4F"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "white"; }}
-          >
-            {generating ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Generating…
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Import from QBO Time
-              </>
-            )}
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 w-full sm:w-auto">
+            <GenerateMonthDropdown
+              value={generateMonth}
+              options={generateMonthOptions}
+              onChange={onGenerateMonthChange}
+              disabled={generating}
+            />
+            <button
+              onClick={onGenerate}
+              disabled={generating || generateMonthOptions.length === 0}
+              className="flex items-center justify-center gap-2 text-sm font-medium px-4 py-2 rounded-lg border transition-colors disabled:opacity-60 w-full sm:w-auto"
+              style={{ borderColor: "rgba(216,243,220,0.5)", color: "white" }}
+              onMouseEnter={(e) => { if (!generating) { e.currentTarget.style.backgroundColor = "white"; e.currentTarget.style.color = "#2D6A4F"; } }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "white"; }}
+            >
+              {generating ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Generate Drafts
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -2666,18 +2711,43 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
     setInvoiceStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
   }
 
+  // Months that actually have synced time entries, formatted YYYY-MM-01, newest first.
+  // Same pattern AllTimeEntriesView uses; converted to YYYY-MM-01 to feed the API + label helpers.
+  const generateMonthOptions = useMemo(
+    () => Array.from(new Set(timeEntries.map((e) => e.month))).sort().reverse().map((m) => `${m}-01`),
+    [timeEntries]
+  );
+  const [generateMonth, setGenerateMonth] = useState<string>(generateMonthOptions[0] ?? defaultGenerateMonth);
+  const [generating, setGenerating] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  function addToast(message: string) {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((prev) => [...prev, { id, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
+  }
+
   async function handleGenerate() {
-    const res = await fetch('/api/billing-runs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ billingMonth: defaultGenerateMonth }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error((data as { error?: string }).error ?? 'Failed to generate drafts');
+    if (generating) return;
+    const month = generateMonth;
+    setGenerating(true);
+    try {
+      const res = await fetch('/api/billing-runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billingMonth: month }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? 'Failed to generate drafts');
+      }
+      addToast('Billing drafts generated. Review invoices below.');
+      // Hard navigation to bust Next.js router cache after mutation (same pattern as original M4 fix)
+      window.location.href = `/invoices?month=${month}`;
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Failed to generate drafts');
+      setGenerating(false);
     }
-    // Hard navigation to bust Next.js router cache after mutation (same pattern as original M4 fix)
-    window.location.href = `/invoices?month=${defaultGenerateMonth}`;
   }
 
   const liveTotalBilling = templates.reduce((sum, t) => sum + invoiceStates[t.id].hours * invoiceStates[t.id].rate, 0);
@@ -2685,6 +2755,20 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Toasts (lifted to parent so both BillingRunDashboard and InvoiceQueueView can use them) */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((toast) => (
+          <div key={toast.id} className="bg-gray-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl max-w-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20" style={{ color: "#52B788" }}>
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              {toast.message}
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Mobile drawer backdrop */}
       {sidebarOpen && (
         <div
@@ -2759,6 +2843,11 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             onGenerate={handleGenerate}
             firmName={firmName}
             billingMonth={activeBillingMonth}
+            addToast={addToast}
+            generateMonth={generateMonth}
+            generateMonthOptions={generateMonthOptions}
+            onGenerateMonthChange={setGenerateMonth}
+            generating={generating}
           />
         )}
         {activeView === "billing-run" && (
@@ -2769,6 +2858,10 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             availableRuns={availableRuns}
             allEntries={allEntries}
             onGenerate={handleGenerate}
+            generateMonth={generateMonth}
+            generateMonthOptions={generateMonthOptions}
+            onGenerateMonthChange={setGenerateMonth}
+            generating={generating}
           />
         )}
         {activeView === "time-entries" && <AllTimeEntriesView timeEntries={timeEntries} />}
