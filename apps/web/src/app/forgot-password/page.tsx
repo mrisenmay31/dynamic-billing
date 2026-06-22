@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { AuthFooter } from "@/components/AuthFooter";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -28,7 +29,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-gray-900">ClockToBill</h1>
@@ -80,6 +81,7 @@ export default function ForgotPasswordPage() {
           </form>
         )}
       </div>
+      <AuthFooter />
     </div>
   );
 }

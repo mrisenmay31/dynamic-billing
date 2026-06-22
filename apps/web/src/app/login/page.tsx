@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { AuthFooter } from "@/components/AuthFooter";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -43,10 +44,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-gray-900">ClockToBill</h1>
+          <p className="text-sm text-gray-500 mt-1">Automated billing for bookkeeping firms</p>
+          <p className="text-xs text-gray-400 mt-0.5">A product of CTA Integrity, LLC</p>
         </div>
 
         {submitted ? (
@@ -117,6 +120,7 @@ export default function LoginPage() {
           </form>
         )}
       </div>
+      <AuthFooter />
     </div>
   );
 }
