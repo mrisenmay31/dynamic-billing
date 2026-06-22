@@ -64,6 +64,14 @@ interface FlatEntry {
   amount: number;
 }
 
+// Raw time-entry row for the All Time Entries view. Sourced directly from the
+// time_entries table (not from billing-run drafts), so it reflects everything
+// synced from QB Time regardless of whether a billing run exists.
+export interface TimeEntryRow extends FlatEntry {
+  month: string; // 'YYYY-MM' — drives the month selector
+  isMapped: boolean; // false when the jobcode isn't linked to a customer yet
+}
+
 interface Toast {
   id: string;
   message: string;
@@ -218,6 +226,7 @@ export interface QboCustomer {
 export interface InvoicesClientProps {
   templates: InvoiceTemplate[];
   allEntries: FlatEntry[];
+  timeEntries: TimeEntryRow[];
   defaultRate: number;
   qboConnected: boolean;
   qbTimeConnected: boolean;
@@ -1338,19 +1347,28 @@ function InvoiceQueueView({
 }
 
 /* ─── All Time Entries view ──────────────────────────────────── */
-function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntry[]; billingMonth: string }) {
+function AllTimeEntriesView({ timeEntries }: { timeEntries: TimeEntryRow[] }) {
+  // Months that actually have synced entries, newest first.
+  const months = Array.from(new Set(timeEntries.map((e) => e.month))).sort().reverse();
+
   const [search, setSearch] = useState("");
+  const [monthFilter, setMonthFilter] = useState<string>(months[0] ?? ""); // "" = all months; default = latest
   const [clientFilter, setClientFilter] = useState("");
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [billableFilter, setBillableFilter] = useState("");
   const [sortAsc, setSortAsc] = useState(true);
 
-  const uniqueEmployees = Array.from(new Set(allEntries.map((e) => e.employee))).sort();
+  const uniqueEmployees = Array.from(new Set(timeEntries.map((e) => e.employee).filter(Boolean))).sort();
+  const uniqueClients = Array.from(new Set(timeEntries.map((e) => e.client))).sort();
 
+  // Month is a primary selector (like the Billing Run dropdown), not a "clearable" filter.
   const hasActiveFilters =
     search !== "" || clientFilter !== "" || employeeFilter !== "" || billableFilter !== "" || !sortAsc;
 
-  const filtered = allEntries.filter((e) => {
+  const monthLabel = monthFilter ? entriesMonthLabel(`${monthFilter}-01`) : "All months";
+
+  const filtered = timeEntries.filter((e) => {
+    if (monthFilter && e.month !== monthFilter) return false;
     if (search && !e.description.toLowerCase().includes(search.toLowerCase())) return false;
     if (clientFilter && e.client !== clientFilter) return false;
     if (employeeFilter && e.employee !== employeeFilter) return false;
@@ -1383,7 +1401,7 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
       {/* Page header */}
       <div className="px-4 md:px-8 pt-6 pb-4">
         <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{entriesMonthLabel(billingMonth)} Import — QuickBooks Time</p>
+        <p className="text-sm text-gray-500 mt-0.5">QuickBooks Time import · {monthLabel}</p>
 
         {/* Stats bar */}
         <div className="flex items-center gap-1 mt-3 flex-wrap">
@@ -1409,13 +1427,29 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
           style={{ borderLeft: "3px solid #2D6A4F", backgroundColor: "#f9fafb" }}
         >
           <p className="text-xs font-medium text-gray-700">
-            These are your raw QBO Time entries for {entriesMonthLabel(billingMonth)}.
+            These are your raw QuickBooks Time entries{monthFilter ? ` for ${monthLabel}` : " across all synced months"}.
           </p>
           <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
             Invoice totals in the queue are calculated directly from this data —
             grouped by client, rounded to the next quarter hour.
           </p>
         </div>
+
+        {/* Unmapped warning — entries whose jobcode isn't linked to a client */}
+        {filtered.some((e) => !e.isMapped) && (
+          <div
+            className="mt-2 pl-4 py-2.5 pr-3 rounded-r-lg"
+            style={{ borderLeft: "3px solid #B45309", backgroundColor: "#FFFBEB" }}
+          >
+            <p className="text-xs font-medium" style={{ color: "#92400E" }}>
+              Some entries aren&apos;t mapped to a billing client yet.
+            </p>
+            <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "#B45309" }}>
+              Unmapped time won&apos;t appear on an invoice until its QB Time jobcode is linked to a
+              client in Client Mapping.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Sticky filter bar */}
@@ -1445,13 +1479,24 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
             )}
           </div>
 
+          {/* Month filter */}
+          <div className="relative shrink-0">
+            <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className={selectCls}>
+              <option value="">All months</option>
+              {months.map((m) => (
+                <option key={m} value={m}>{entriesMonthLabel(`${m}-01`)}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+          </div>
+
           {/* Client filter */}
           <div className="relative shrink-0">
             <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className={selectCls}>
               <option value="">All Clients</option>
-              <option value="Baine & Company">Baine &amp; Company</option>
-              <option value="Knox Physical Therapy">Knox Physical Therapy</option>
-              <option value="Knoxville Title Agency LLC">Knoxville Title Agency LLC</option>
+              {uniqueClients.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
           </div>
@@ -1535,7 +1580,17 @@ function AllTimeEntriesView({ allEntries, billingMonth }: { allEntries: FlatEntr
                   className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}
                 >
                   <td className="py-2.5 px-3 font-mono text-xs text-gray-500 whitespace-nowrap">{entry.date}</td>
-                  <td className="py-2.5 px-3 text-xs text-gray-700">{entry.client}</td>
+                  <td className="py-2.5 px-3 text-xs text-gray-700">
+                    {entry.client}
+                    {!entry.isMapped && (
+                      <span
+                        className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium align-middle"
+                        style={{ backgroundColor: "#FEF3C7", color: "#B45309" }}
+                      >
+                        Unmapped
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2.5 px-3 text-xs text-gray-700">{entry.employee}</td>
                   <td className="py-2.5 px-3 text-xs text-gray-500">{entry.productService}</td>
                   <td className="py-2.5 px-3 text-xs text-gray-700 leading-relaxed">{entry.description}</td>
@@ -2397,7 +2452,7 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, currentRun, availableRuns, defaultGenerateMonth }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, timeEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, currentRun, availableRuns, defaultGenerateMonth }: InvoicesClientProps) {
   const router = useRouter();
   const billingMonth = currentRun?.billingMonth ?? null;
   const [activeView, setActiveView] = useState<NavView>("billing-run");
@@ -2565,7 +2620,7 @@ export default function InvoicesClient({ templates, allEntries, defaultRate, qbo
             onGenerate={handleGenerate}
           />
         )}
-        {activeView === "time-entries" && <AllTimeEntriesView allEntries={allEntries} billingMonth={activeBillingMonth} />}
+        {activeView === "time-entries" && <AllTimeEntriesView timeEntries={timeEntries} />}
         {activeView === "client-rules" && (
           <ClientRulesView
             sharedHighTouch={sharedHighTouch}

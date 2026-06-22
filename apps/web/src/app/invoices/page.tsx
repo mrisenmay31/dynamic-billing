@@ -162,10 +162,44 @@ export default async function InvoicesPage(
 
   const defaultGenerateMonth = getPreviousMonthISO()
 
+  // Raw time entries for the All Time Entries view — read directly from the
+  // time_entries table for this firm, independent of any billing run, so every
+  // synced QB Time entry shows up (including unmapped ones) across all months.
+  const customerNameById = new Map((customers ?? []).map((c) => [c.id, c.display_name]))
+
+  const { data: rawTimeEntries } = await supabase
+    .from('time_entries')
+    .select('started_at, staff_name, notes, duration_seconds, is_billable, qb_time_jobcode_name, customer_id')
+    .eq('firm_id', firmId)
+    .order('started_at', { ascending: true })
+
+  const timeEntries: InvoicesClientProps['timeEntries'] = (rawTimeEntries ?? []).map((e) => {
+    const d = new Date(e.started_at)
+    const yyyy = d.getUTCFullYear()
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(d.getUTCDate()).padStart(2, '0')
+    const mappedName = e.customer_id ? customerNameById.get(e.customer_id) ?? null : null
+    const duration = secondsToDuration(e.duration_seconds)
+    return {
+      client: mappedName ?? (e.qb_time_jobcode_name ?? 'Unmapped'),
+      date: `${mm}/${dd}/${yyyy}`,
+      employee: e.staff_name ?? '',
+      productService: 'Hourly Accounting services',
+      description: e.notes ?? '',
+      duration,
+      rate: defaultRate,
+      billable: e.is_billable ? 'Yes' : 'No',
+      amount: durationToAmount(duration, defaultRate),
+      month: `${yyyy}-${mm}`,
+      isMapped: !!mappedName,
+    }
+  })
+
   return (
     <InvoicesClient
       templates={templates}
       allEntries={allEntries}
+      timeEntries={timeEntries}
       defaultRate={defaultRate}
       qboConnected={qboConnected}
       qbTimeConnected={qbTimeConnected}
