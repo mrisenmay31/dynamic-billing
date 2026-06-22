@@ -112,7 +112,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ---
 
-## Current Code Status (as of 2026-06-15)
+## Current Code Status (as of 2026-06-22)
 
 ### Milestone summary
 | Milestone | Status | Confirmed |
@@ -333,6 +333,51 @@ Every QBO API response includes an `intuit_tid` header — Intuit's trace ID for
 - **`src/lib/qbo/invoices.ts`** — added `getIntuitTid(res)` + `throwQboError(label, res)` helpers. Every QBO failure now throws an Error whose message embeds `[intuit_tid: …]`, so the trace ID is persisted to `invoice_drafts.last_error` on any failed send. `createQboInvoice` and `sendQboInvoice` now return `intuitTid` on success.
 - **`src/app/api/invoice-drafts/[id]/send/route.ts`** — on successful send, writes an `invoice_sent` audit log to `audit_logs.details` with `create_intuit_tid` and `send_intuit_tid`.
 - **`src/app/api/qbo/items/route.ts`** — debug endpoint now returns `intuit_tid` in both success and error responses.
+
+---
+
+## Session 2026-06-22 — multi-tenancy, pre-Lea-Ann OAuth test, self-service mapping
+
+Goal of the session: connect **CTA Integrity's own** QBO + QB Time accounts and run the full pipeline end-to-end as a dry run before onboarding Lea Ann.
+
+### 🚧 NEXT TASK — start here: "Generate Drafts" button does nothing
+**Root cause (diagnosed, not yet fixed):**
+- `handleGenerate` in `InvoicesClient.tsx` (~line 2669) posts `billingMonth: defaultGenerateMonth`, and `defaultGenerateMonth = getPreviousMonthISO()` (the *previous calendar month*). Today is June 2026 → it sends **`2026-05-01`**, but every CTA Integrity time entry is in **June 2026**. The engine finds 0 entries for May → `POST /api/billing-runs` returns **422 "No billable time entries found for this period."**
+- The Billing Run dashboard empty-state button (`BillingRunDashboard`, ~line 555) calls `onGenerate` **raw** — no try/catch, no toast — so the thrown error is swallowed and the button looks dead. (The Invoice Queue header button at ~line 864 *does* wrap it with a toast, so it would at least surface the error.)
+
+**Fix plan (also delivers the dropdown the user asked for):**
+1. Add a **billing-period dropdown** to the Billing Run view so the user picks the month to generate; default to the most recent month that has time entries. Build options from entry months (same approach as the All Time Entries selector in `AllTimeEntriesView`) and/or `availableRuns`. Pass the selected month into `handleGenerate` instead of the hardcoded `defaultGenerateMonth`.
+2. Give the Billing Run view real success/error feedback (reuse the Invoice Queue toast pattern, or lift the try/catch into the shared handler so **both** generate buttons report status).
+3. Verify: select June 2026 → Generate → drafts created → review → Approve & Send.
+
+### Shipped this session (all merged to `main`, deployed to `app.clocktobill.com`)
+- **Multi-tenancy** — removed the hardcoded P&L `FIRM_ID` from all 9 server files. New `src/lib/auth/firm.ts` → `getFirmContext(supabase)` returns `{ userId, firmId }` from `firm_users`. Added tenant-scope guards on the invoice-draft **send** and **PATCH** routes. `page.tsx` resolves the firm explicitly (throws a clear error if a logged-in user has no firm — avoids a /login redirect loop). Matt's login maps to the **CTA Integrity, LLC** firm (`0a2a776d-27f8-494c-91a3-834d0698bee8`); P&L (`00000000-…0001`) is untouched.
+- **Auth-page legitimacy** — new `src/components/AuthFooter.tsx` (links to clocktobill.com, Privacy, Terms, support@ctaintegrity.com + copyright) on `/login`, `/forgot-password`, `/reset-password`; login now states the product + "A product of CTA Integrity, LLC". Done to clear the Safe Browsing flag (below).
+- **All Time Entries decoupled from billing runs** — `page.tsx` now reads the `time_entries` table directly into a new `timeEntries` prop (independent of any run). `AllTimeEntriesView` reads from it; added a month selector ("All months" + each month with data, default = latest), dynamic client-filter options, and an "Unmapped" badge/banner. (The old coupling to billing-run drafts is why it showed "May 2026 / 0 entries.") The run-scoped `allEntries` still feeds the Billing Run + Settings views.
+- **Self-service jobcode → QBO-customer mapping** — new `GET /api/qb-time/jobcodes` (synced jobcodes + mapping status) and `POST /api/qb-time/jobcodes/assign` (find-or-create the `customers` row from the chosen QBO customer, upsert the jobcode→customer mapping, and **backfill `customer_id` onto existing time entries** — no re-sync needed). Client Mapping **Panel B** rewritten from a static mockup into a live table: each jobcode gets a QBO-customer dropdown + Save. This is now the supported way to onboard any firm's clients — **no hand-creating DB rows**.
+
+### New / changed key source files this session
+```
+src/lib/auth/firm.ts                         — getFirmContext(): per-request { userId, firmId } from firm_users (replaces hardcoded FIRM_ID)
+src/components/AuthFooter.tsx                 — company-identity footer for auth pages
+src/app/api/qb-time/jobcodes/route.ts         — GET: synced jobcodes + current mapping status
+src/app/api/qb-time/jobcodes/assign/route.ts  — POST: find-or-create customer + map jobcode + backfill entries
+```
+All 9 previously-hardcoded files (`page.tsx`, `billing-runs`, invoice-drafts `send` + `[id]`, `qb-time/sync-timesheets`, `qb-time/sync-jobcodes`, `customers/sync-qbo`, `customers/mappings`, `customers/[id]`, `qbo/items`) now call `getFirmContext`.
+
+### CTA Integrity state (confirmed in DB, project `vvmfbtvxsjeyrmsqodon`)
+- Firm `0a2a776d-27f8-494c-91a3-834d0698bee8`. **`qbo_write_enabled = false`** — must be flipped to `true` before the actual send test.
+- QBO **and** QB Time both connected (tokens encrypted under the CTA firm). QBO customer sync works (used during mapping).
+- 9 June-2026 time entries across 3 jobcodes — Baine & Company (`255802360`), Knox Physical Therapy (`255802522`), Knoxville Title Agency LLC (`255802204`) — **all now mapped** to auto-created customers via the new Panel B flow.
+
+### Pre-send checklist for the CTA dry run (after Generate Drafts is fixed)
+- Flip `firms.qbo_write_enabled = true` for `0a2a776d-…`.
+- Confirm the 3 mapped QBO customers have **email addresses** (the send step requires one; otherwise it errors and marks the draft `error`).
+- "Hourly Accounting services" item auto-creates in QBO if missing.
+
+### Operational items still pending (not code)
+- **Google Safe Browsing flag** on `clocktobill.com` / `app.clocktobill.com` ("Some pages on this site are unsafe" — new-domain + login-form false positive). Search Console "Security Issues" shows nothing actionable, so remediation is the **Report Incorrect Phishing Warning** form (`https://safebrowsing.google.com/safebrowsing/report_error/`). Matt submitted reports 2026-06-22; awaiting review (hours–~72h). Chrome blocks the site until cleared — bypass via "visit this unsafe site" / Incognito / another browser to keep testing.
+- **OAuth redirect URIs** — both QBO and QB Time connects succeeded this session, so the registered redirect URIs are correct (`https://app.clocktobill.com/api/auth/qbo/callback` on the Intuit **Production** keys tab; `https://app.clocktobill.com/api/auth/qb-time/callback` in the QB Time API add-on).
 
 ---
 
