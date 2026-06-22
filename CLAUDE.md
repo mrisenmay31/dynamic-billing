@@ -167,16 +167,17 @@ src/app/terms/page.tsx        — static Terms of Service page (public, no auth 
 
 ### Nav views in InvoicesClient.tsx
 1. **Billing Run** — summary dashboard; stat cards, progress indicator, totals; month selector dropdown
-2. **Invoice Queue** — per-client review cards with billing math, invoice preview, time entries, adjustment controls; "Approve & Send Invoice" button per card; "Send All Approved Invoices" bulk action
+2. **Invoice Queue** — per-client review cards with billing math, invoice preview, time entries, adjustment controls; read-only **StatusBadge** ("In Review" → "Sent"); "Approve & Send Invoice" button per card; "Send All Approved Invoices" bulk action. Header has a billing-period dropdown next to the Generate Drafts button.
 3. **All Time Entries** — filterable flat table of time entries (scoped to selected month)
 4. **Client Rules** — firm-wide defaults + per-client overrides (rate, description, high-touch flag)
 5. **Client Mapping** — QBO customer sync + manual match UI; QB Time jobcode panel (scaffolded; M2b live but jobcode-to-customer linking UI not yet wired)
 6. **Settings** — integration status, billing behavior config
 
-### Invoice Queue button labels (updated 2026-06-02)
+### Invoice Queue button labels (updated 2026-06-22)
 - Per-card button: **"Approve & Send Invoice"** (was "Create QuickBooks Draft")
 - Bulk action: **"Send All Approved Invoices"** (was "Create all QBO drafts")
-- Status badge when sent: **"Sent"** (was "Draft Created in QBO")
+- Per-card status: read-only **StatusBadge** — "In Review" (amber) or "Sent" (green). No dropdown; sending is exclusively via the button. (Replaced the 3-state dropdown 2026-06-22 — see Session part-2 below.)
+- Header button: **"Generate Drafts"** (was "Import from QBO Time"; renamed 2026-06-22 to match the actual semantic).
 - Toast: "Invoice sent. BillerGenie will sync the payment portal automatically."
 
 ### Seeded DB data
@@ -340,16 +341,6 @@ Every QBO API response includes an `intuit_tid` header — Intuit's trace ID for
 
 Goal of the session: connect **CTA Integrity's own** QBO + QB Time accounts and run the full pipeline end-to-end as a dry run before onboarding Lea Ann.
 
-### 🚧 NEXT TASK — start here: "Generate Drafts" button does nothing
-**Root cause (diagnosed, not yet fixed):**
-- `handleGenerate` in `InvoicesClient.tsx` (~line 2669) posts `billingMonth: defaultGenerateMonth`, and `defaultGenerateMonth = getPreviousMonthISO()` (the *previous calendar month*). Today is June 2026 → it sends **`2026-05-01`**, but every CTA Integrity time entry is in **June 2026**. The engine finds 0 entries for May → `POST /api/billing-runs` returns **422 "No billable time entries found for this period."**
-- The Billing Run dashboard empty-state button (`BillingRunDashboard`, ~line 555) calls `onGenerate` **raw** — no try/catch, no toast — so the thrown error is swallowed and the button looks dead. (The Invoice Queue header button at ~line 864 *does* wrap it with a toast, so it would at least surface the error.)
-
-**Fix plan (also delivers the dropdown the user asked for):**
-1. Add a **billing-period dropdown** to the Billing Run view so the user picks the month to generate; default to the most recent month that has time entries. Build options from entry months (same approach as the All Time Entries selector in `AllTimeEntriesView`) and/or `availableRuns`. Pass the selected month into `handleGenerate` instead of the hardcoded `defaultGenerateMonth`.
-2. Give the Billing Run view real success/error feedback (reuse the Invoice Queue toast pattern, or lift the try/catch into the shared handler so **both** generate buttons report status).
-3. Verify: select June 2026 → Generate → drafts created → review → Approve & Send.
-
 ### Shipped this session (all merged to `main`, deployed to `app.clocktobill.com`)
 - **Multi-tenancy** — removed the hardcoded P&L `FIRM_ID` from all 9 server files. New `src/lib/auth/firm.ts` → `getFirmContext(supabase)` returns `{ userId, firmId }` from `firm_users`. Added tenant-scope guards on the invoice-draft **send** and **PATCH** routes. `page.tsx` resolves the firm explicitly (throws a clear error if a logged-in user has no firm — avoids a /login redirect loop). Matt's login maps to the **CTA Integrity, LLC** firm (`0a2a776d-27f8-494c-91a3-834d0698bee8`); P&L (`00000000-…0001`) is untouched.
 - **Auth-page legitimacy** — new `src/components/AuthFooter.tsx` (links to clocktobill.com, Privacy, Terms, support@ctaintegrity.com + copyright) on `/login`, `/forgot-password`, `/reset-password`; login now states the product + "A product of CTA Integrity, LLC". Done to clear the Safe Browsing flag (below).
@@ -370,7 +361,7 @@ All 9 previously-hardcoded files (`page.tsx`, `billing-runs`, invoice-drafts `se
 - QBO **and** QB Time both connected (tokens encrypted under the CTA firm). QBO customer sync works (used during mapping).
 - 9 June-2026 time entries across 3 jobcodes — Baine & Company (`255802360`), Knox Physical Therapy (`255802522`), Knoxville Title Agency LLC (`255802204`) — **all now mapped** to auto-created customers via the new Panel B flow.
 
-### Pre-send checklist for the CTA dry run (after Generate Drafts is fixed)
+### Pre-send checklist for the CTA dry run
 - Flip `firms.qbo_write_enabled = true` for `0a2a776d-…`.
 - Confirm the 3 mapped QBO customers have **email addresses** (the send step requires one; otherwise it errors and marks the draft `error`).
 - "Hourly Accounting services" item auto-creates in QBO if missing.
@@ -378,6 +369,33 @@ All 9 previously-hardcoded files (`page.tsx`, `billing-runs`, invoice-drafts `se
 ### Operational items still pending (not code)
 - **Google Safe Browsing flag** on `clocktobill.com` / `app.clocktobill.com` ("Some pages on this site are unsafe" — new-domain + login-form false positive). Search Console "Security Issues" shows nothing actionable, so remediation is the **Report Incorrect Phishing Warning** form (`https://safebrowsing.google.com/safebrowsing/report_error/`). Matt submitted reports 2026-06-22; awaiting review (hours–~72h). Chrome blocks the site until cleared — bypass via "visit this unsafe site" / Incognito / another browser to keep testing.
 - **OAuth redirect URIs** — both QBO and QB Time connects succeeded this session, so the registered redirect URIs are correct (`https://app.clocktobill.com/api/auth/qbo/callback` on the Intuit **Production** keys tab; `https://app.clocktobill.com/api/auth/qb-time/callback` in the QB Time API add-on).
+
+---
+
+## Session 2026-06-22 (part 2) — Generate Drafts fix + Billing Run polish + invoice-status simplification
+
+Three small UI changes shipped after the part-1 multi-tenancy / mapping work. CTA dry run is now unblocked at the code level (only DB flag + customer-email checks remain).
+
+### Generate Drafts — fixed + dropdown added (commit `3329673`)
+The hardcoded `defaultGenerateMonth` (always = previous calendar month) is gone. Now:
+- `InvoicesClient` (parent) owns lifted state: `generateMonth`, `generating`, `toasts` + `addToast`. The **toast root is lifted from `InvoiceQueueView` to the parent** so both views share one set of toasts.
+- `generateMonthOptions` = months that actually have synced time entries, newest first, formatted `YYYY-MM-01`. Default `generateMonth` = newest entry month; falls back to `defaultGenerateMonth` only when nothing's synced.
+- New `GenerateMonthDropdown` (controlled `<select>`, distinct from the read-only `MonthSelectorDropdown`); renders in **both** the Billing Run empty state and the Invoice Queue header.
+- Parent `handleGenerate()` now wraps try/catch + toast + `generating` flag — the Billing Run empty-state path used to swallow the 422; both Generate buttons now report success/failure.
+- Invoice Queue header button label: "Import from QBO Time" → **"Generate Drafts"** (matches the actual semantic — the real QBO Time import lives in Settings → Sync Now).
+
+### Billing Run dashboard polish (commit `e95279b`)
+- Removed the *"{X}'s time is billed in {Y}, this is standard practice."* subline.
+- Replaced the static 4-step "Billing Run Progress" mockup (Imported / Reviewed / Drafts Prepared / QBO Drafts Created — the last two were the same step in our one-shot Approve & Send flow) with a real **Send Progress** bar: *"N of M invoices sent"* + a fill bar colored by `runDisplayStatus().color` (amber → yellow → green).
+- Removed the "How this fits your existing tools" callout.
+
+### Invoice status — 3 states → 2 (commit `a6df001`)
+The per-card status dropdown was doing two unrelated jobs: passive review flags (Needs Review / Ready to Draft) AND a destructive action (Sent — silently fired the QBO send call). Collapsed to a read-only badge:
+- `InvoiceStatus` type: `"needs_review" | "ready_to_draft" | "draft_created"` → `"in_review" | "sent"`.
+- `STATUS_CONFIG` reduced to 2 entries.
+- `StatusDropdown` + `handleStatusChange` removed.
+- New `StatusBadge` (read-only pill, same visual language as the Billing Run dashboard's run-status badge).
+- Sending is now **exclusively** via the per-card **Approve & Send Invoice** button or the **Send All Approved Invoices** bulk action.
 
 ---
 
