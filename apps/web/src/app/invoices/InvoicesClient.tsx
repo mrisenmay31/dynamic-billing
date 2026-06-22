@@ -631,13 +631,8 @@ function BillingRunDashboard({
   const roundingDiff = Math.round((liveTotalBilling - rawStats.totalRawAmount) * 100) / 100;
   const roundingDiffSign = roundingDiff >= 0 ? "+" : "";
   const badge = runDisplayStatus(templates);
-
-  const steps = [
-    { label: "Imported QBO Time", state: "done" },
-    { label: "Reviewed Time", state: "active" },
-    { label: "Draft Invoices Prepared", state: "upcoming" },
-    { label: "QBO Drafts Created", state: "upcoming" },
-  ] as const;
+  const sentCount = templates.filter((t) => t.sent).length;
+  const sendPct = templates.length === 0 ? 0 : Math.round((sentCount / templates.length) * 100);
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -647,7 +642,6 @@ function BillingRunDashboard({
             <div>
               <h1 className="font-display text-2xl text-gray-900 leading-tight">{runMonthLabel(billingMonth)} Billing Run</h1>
               <p className="text-sm mt-0.5 text-gray-500">{entriesMonthLabel(billingMonth)} Time Entries</p>
-              <p className="text-xs mt-1 text-gray-400">{entriesMonthName(billingMonth)}&apos;s time is billed in {runMonthName(billingMonth)}, this is standard practice.</p>
             </div>
             <div className="flex items-center gap-3 shrink-0 mt-1">
               <MonthSelectorDropdown availableRuns={availableRuns} billingMonth={billingMonth} />
@@ -672,31 +666,12 @@ function BillingRunDashboard({
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-5">Billing Run Progress</p>
-          <div className="flex flex-col sm:flex-row sm:items-start">
-            {steps.map((step, i) => (
-              <div key={step.label} className="flex items-start gap-3 sm:gap-0 sm:flex-col sm:items-center sm:flex-1 relative pb-6 last:pb-0 sm:pb-0">
-                {i < steps.length - 1 && (
-                  <>
-                    {/* vertical connector (mobile) */}
-                    <div className="sm:hidden absolute left-3.5 top-7 -translate-x-1/2 w-px h-[calc(100%-1.75rem)]" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : "#e5e7eb" }} />
-                    {/* horizontal connector (desktop) */}
-                    <div className="hidden sm:block absolute top-3.5 left-1/2 w-full h-px" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : "#e5e7eb", transform: "translateY(-50%)" }} />
-                  </>
-                )}
-                <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 relative z-10" style={{ backgroundColor: step.state === "done" ? "#2D6A4F" : step.state === "active" ? "#52B788" : "white", border: step.state === "upcoming" ? "2px solid #e5e7eb" : "none" }}>
-                  {step.state === "done" && (
-                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                  {step.state === "active" && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
-                </div>
-                <p className="text-xs leading-snug relative z-10 pt-1 sm:pt-0 sm:mt-2 sm:text-center sm:px-1" style={{ color: step.state === "upcoming" ? "#9ca3af" : "#111827", fontWeight: step.state === "active" ? 600 : 400 }}>
-                  {step.label}
-                </p>
-              </div>
-            ))}
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Send Progress</p>
+            <p className="text-xs font-medium text-gray-700"><span className="font-mono">{sentCount}</span> of <span className="font-mono">{templates.length}</span> invoices sent</p>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full transition-all duration-300" style={{ width: `${sendPct}%`, backgroundColor: badge.color }} />
           </div>
         </div>
 
@@ -731,20 +706,6 @@ function BillingRunDashboard({
           </p>
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-5">
-          <p className="text-xs font-semibold text-gray-700 mb-1">How this fits your existing tools</p>
-          <p className="text-xs text-gray-500 leading-relaxed mb-3">
-            This dashboard does not replace TaxDome, QuickBooks, or BillerGenie. It sits between QBO Time and QuickBooks invoices to turn reviewed time into prepared invoice drafts.
-          </p>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {["QBO Time", "Billing Review Dashboard", "QuickBooks Draft Invoice", "BillerGenie Payment Portal"].map((item, i, arr) => (
-              <span key={item} className="flex items-center gap-1.5">
-                <span className="font-mono text-xs text-gray-600 bg-white border border-gray-200 px-2 py-1 rounded">{item}</span>
-                {i < arr.length - 1 && <span className="font-mono text-xs text-gray-400">→</span>}
-              </span>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
