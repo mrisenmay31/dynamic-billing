@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
-type InvoiceStatus = "needs_review" | "ready_to_draft" | "draft_created";
+type InvoiceStatus = "in_review" | "sent";
 
 interface TimeEntry {
   date: string;
@@ -392,9 +392,8 @@ const NAV_ITEMS: { view: NavView; label: string; Icon: React.ElementType }[] = [
 
 /* ─── Status config ──────────────────────────────────────────── */
 const STATUS_CONFIG: Record<InvoiceStatus, { label: string; bg: string; color: string }> = {
-  needs_review: { label: "Needs Review", bg: "#FFF3E0", color: "#C2410C" },
-  ready_to_draft: { label: "Ready to Draft", bg: "#F1F5F9", color: "#475569" },
-  draft_created: { label: "Sent", bg: "#D8F3DC", color: "#2D6A4F" },
+  in_review: { label: "In Review", bg: "#FFF3E0", color: "#C2410C" },
+  sent: { label: "Sent", bg: "#D8F3DC", color: "#2D6A4F" },
 };
 
 /* ─── Sub-components ─────────────────────────────────────────── */
@@ -422,40 +421,15 @@ function ToggleSwitch({
   );
 }
 
-function StatusDropdown({
-  status,
-  onChange,
-}: {
-  status: InvoiceStatus;
-  onChange: (s: InvoiceStatus) => void;
-}) {
+function StatusBadge({ status }: { status: InvoiceStatus }) {
   const cfg = STATUS_CONFIG[status];
   return (
-    <div className="relative shrink-0">
-      <select
-        value={status}
-        onChange={(e) => onChange(e.target.value as InvoiceStatus)}
-        className="appearance-none text-xs font-semibold pl-2.5 pr-6 py-1 rounded-full cursor-pointer border-0 focus:outline-none focus:ring-2 focus:ring-offset-1"
-        style={{ backgroundColor: cfg.bg, color: cfg.color }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {(Object.keys(STATUS_CONFIG) as InvoiceStatus[]).map((key) => (
-          <option key={key} value={key}>
-            {STATUS_CONFIG[key].label}
-          </option>
-        ))}
-      </select>
-      <svg
-        className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2.5}
-        style={{ color: cfg.color }}
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
+    <span
+      className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
+      style={{ backgroundColor: cfg.bg, color: cfg.color }}
+    >
+      {cfg.label}
+    </span>
   );
 }
 
@@ -753,7 +727,7 @@ function InvoiceQueueView({
   const [sendingAll, setSendingAll] = useState(false);
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const isDone = (id: string) => states[id].status === "draft_created";
+  const isDone = (id: string) => states[id].status === "sent";
 
   const allTotalHours = templates.reduce((sum, t) => sum + states[t.id].hours, 0);
   const allTotalBilled = templates.reduce((sum, t) => sum + states[t.id].hours * states[t.id].rate, 0);
@@ -790,24 +764,16 @@ function InvoiceQueueView({
         throw new Error((data as { error?: string }).error ?? "Failed to send invoice");
       }
       if ((data as { alreadySent?: boolean }).alreadySent) {
-        updateState(id, { status: "draft_created", expanded: false });
+        updateState(id, { status: "sent", expanded: false });
         addToast("Invoice was already sent.");
         return;
       }
-      updateState(id, { status: "draft_created", expanded: false });
+      updateState(id, { status: "sent", expanded: false });
       addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Failed to send invoice");
     } finally {
       setSavingIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
-    }
-  }
-
-  function handleStatusChange(id: string, newStatus: InvoiceStatus) {
-    if (newStatus === "draft_created") {
-      createDraft(id);
-    } else {
-      updateState(id, { status: newStatus });
     }
   }
 
@@ -834,7 +800,7 @@ function InvoiceQueueView({
           return t.id;
         })
       );
-      ids.forEach((id) => updateState(id, { status: "draft_created", expanded: false }));
+      ids.forEach((id) => updateState(id, { status: "sent", expanded: false }));
       if (targets.length === 1) {
         addToast("Invoice sent. BillerGenie will sync the payment portal automatically.");
       } else {
@@ -946,10 +912,7 @@ function InvoiceQueueView({
                         <div className="font-mono text-xl font-medium text-gray-900">{formatCurrency(amount)}</div>
                         <div className="font-mono text-xs text-gray-400 mt-0.5">{formatHours(finalQty)} hrs @ ${state.rate}/hr</div>
                       </div>
-                      <StatusDropdown
-                        status={state.status}
-                        onChange={(s) => handleStatusChange(template.id, s)}
-                      />
+                      <StatusBadge status={state.status} />
                       {!done && <ChevronIcon expanded={state.expanded} />}
                     </div>
                   </div>
@@ -2662,7 +2625,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
           rate: sharedClientRates[t.id],
           internalNote: "",
           expanded: false,
-          status: "ready_to_draft" as InvoiceStatus,
+          status: "in_review" as InvoiceStatus,
           adjustmentReason: "",
         },
       ])
