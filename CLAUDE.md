@@ -220,7 +220,7 @@ src/app/terms/page.tsx        — static Terms of Service page (public, no auth 
 ### Pre-production checklist (before connecting Lea Ann's real account)
 
 **Done:**
-- ✅ `QBO_ITEM_NAME` env var removed from Vercel
+- ✅ `QBO_ITEM_NAME` env var **actually** removed from Vercel 2026-06-23 (this note previously said "removed 2026-06-09" but it was still set — discovered during the CTA dry run when invoice line items showed up as the override value instead of the code default `Hourly Accounting services`)
 - ✅ `INTUIT_ENVIRONMENT` set to `production` in Vercel
 - ✅ Domain set to `app.clocktobill.com`; Resend sending domain verified on `clocktobill.com`
 - ✅ AES-256-GCM token encryption implemented (replaces base64 stub)
@@ -236,6 +236,8 @@ src/app/terms/page.tsx        — static Terms of Service page (public, no auth 
 **Still outstanding:**
 - **Lea Ann must authorize both OAuth flows** — QBO connect (Settings → Connect QBO) and QB Time connect (Settings → Connect QB Time)
 - **Confirm `"Hourly Accounting services"` item exists** in Lea Ann's real QBO (system will auto-create if missing, but confirm)
+- **Verify "Custom transaction numbers" is OFF in Lea Ann's QBO** — Settings → Account and Settings → Sales → Sales form content. When ON, QBO does not auto-generate `DocNumber`, the send response returns no invoice number, our `qbo_invoice_number` saves as `null`, and QBO renders the invoice as "Invoice undefined". Discovered during the CTA dry run 2026-06-23.
+- **Verify every QBO customer to be invoiced has `PrimaryEmailAddr`** — send call 422s if missing. Lea Ann's prod customers likely do; spot check before M7.
 - **Invite Lea Ann** via magic link (creates her auth user)
 - **Obtain known-duplicate customer list from Lea Ann** before M7 (some clients may have duplicate QBO entries)
 
@@ -367,7 +369,7 @@ All 9 previously-hardcoded files (`page.tsx`, `billing-runs`, invoice-drafts `se
 - "Hourly Accounting services" item auto-creates in QBO if missing.
 
 ### Operational items still pending (not code)
-- **Google Safe Browsing flag** on `clocktobill.com` / `app.clocktobill.com` ("Some pages on this site are unsafe" — new-domain + login-form false positive). Search Console "Security Issues" shows nothing actionable, so remediation is the **Report Incorrect Phishing Warning** form (`https://safebrowsing.google.com/safebrowsing/report_error/`). Matt submitted reports 2026-06-22; awaiting review (hours–~72h). Chrome blocks the site until cleared — bypass via "visit this unsafe site" / Incognito / another browser to keep testing.
+- ✅ **Google Safe Browsing flag** on `clocktobill.com` — **cleared 2026-06-23**. Google Search Console emailed "Review successful for clocktobill.com"; warnings being removed within a few hours. (Original flag: new-domain + login-form false positive; remediated via the **Report Incorrect Phishing Warning** form submitted 2026-06-22.)
 - **OAuth redirect URIs** — both QBO and QB Time connects succeeded this session, so the registered redirect URIs are correct (`https://app.clocktobill.com/api/auth/qbo/callback` on the Intuit **Production** keys tab; `https://app.clocktobill.com/api/auth/qb-time/callback` in the QB Time API add-on).
 
 ---
@@ -396,6 +398,27 @@ The per-card status dropdown was doing two unrelated jobs: passive review flags 
 - `StatusDropdown` + `handleStatusChange` removed.
 - New `StatusBadge` (read-only pill, same visual language as the Billing Run dashboard's run-status badge).
 - Sending is now **exclusively** via the per-card **Approve & Send Invoice** button or the **Send All Approved Invoices** bulk action.
+
+---
+
+## Session 2026-06-23 — CTA Integrity end-to-end dry run
+
+First fully-live run through production QBO. Flipped `qbo_write_enabled = true` on CTA firm (`0a2a776d-…`), generated drafts for June 2026 (3 customers: Baine $375, Knox PT $562.50, KTA $500), Approved & Sent all three. Customer emails in CTA QBO were repointed to Matt's inboxes beforehand to avoid hitting real P&L customers. All three invoices created + sent atomically; `qbo_invoice_id`, `sent_at`, idempotency keys, and create+send `intuit_tid`s all persisted correctly. **No code changes shipped this session.**
+
+### Findings from the live run + fixes
+1. **`qbo_invoice_number` saved as `null` on all 3 June invoices** — root cause: CTA QBO had "Custom transaction numbers" toggled ON, so QBO did not auto-generate `DocNumber` and our send response came back with an empty value. QBO renders these as "Invoice undefined". **Fix:** turned off Settings → Account and Settings → Sales → Sales form content → "Custom transaction numbers" in CTA QBO. (Cannot backfill the existing 3 — `DocNumber` is immutable on QBO invoices.) Same toggle must be verified in Lea Ann's QBO before M7.
+2. **Line items showed "Hours" instead of "Hourly Accounting services"** — root cause: `QBO_ITEM_NAME` env var was still set in Vercel (likely value `"Hours"`), overriding the code default. CLAUDE.md previously said it was removed 2026-06-09 but it wasn't. **Fix:** deleted `QBO_ITEM_NAME` from all three Vercel environments + redeployed. (Note: a misspelled `QB_ITEM_NAME` — no O — also exists in Vercel; harmless because the code doesn't read it, but can be cleaned up.)
+3. **400 "Request Header Or Cookie Too Large" on the View and Pay link from `matt@ctaintegrity.com`** — **not a bug**. nginx at `links.notification.intuit.com` rejects when the browser sends too many/too-large Intuit cookies. The same email opened cleanly from `mrisenmay@gmail.com` and `mrisenmay@hotmail.com`. Real customers (no accumulated Intuit cookies) will not hit this.
+
+### Re-test confirmed both fixes
+Inserted a single July-2026 test entry directly into `time_entries` (Baine, 2.00 hr, `qb_time_entry_id = 'test-retest-baine-2026-07-15-001'`) — couldn't reuse June drafts because the send route's idempotency check short-circuits on `qbo_invoice_id`. Generated July drafts, Approved & Sent. Result: `qbo_invoice_number = "1001"` persisted, QBO line item shows "Hourly Accounting services". Both fixes verified end-to-end.
+
+### State to clean up at Matt's discretion (not blocking)
+- 4 real invoices now exist in CTA Integrity's production QBO against the three "P&L-style" customer records (Baine `qbo_customer_id 3`, Knox PT `4`, KTA `2`, plus the July retest Baine #1001 on `qbo_customer_id 3`). Customer email addresses on those records were rewritten to Matt's inboxes. Matt can void/delete these in QBO if he wants CTA's books clean.
+- One synthetic time entry remains: `time_entries.qb_time_entry_id = 'test-retest-baine-2026-07-15-001'` (CTA firm). Notes field explicitly labels it as the retest entry. Safe to delete by `qb_time_entry_id` filter.
+
+### Net result
+End-to-end pipeline (Generate Drafts → review → Approve & Send → real QBO invoice created → real email delivered → invoice viewable in QBO with a real `DocNumber` and the correct line item) is **proven on production QBO**. The remaining gate to M7 is now purely operational: invite Lea Ann, get her to authorize both OAuth flows, verify her QBO settings (`Custom transaction numbers` off, customer emails present, `Hourly Accounting services` item or willingness to auto-create), confirm her duplicate-customer list.
 
 ---
 
