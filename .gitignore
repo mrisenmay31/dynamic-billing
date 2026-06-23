@@ -34,3 +34,6 @@ logs/
 # Test coverage
 coverage/
 .nyc_output/
+
+# Local scratchpad — personal prompt drafts, not for commit
+prompt.md
