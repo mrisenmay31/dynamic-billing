@@ -822,7 +822,7 @@ function InvoiceQueueView({
         <div className="px-4 md:px-8 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl text-white leading-tight">Invoice Queue</h1>
-            <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>{entriesMonthLabel(billingMonth)} · Billing Period</p>
+            <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>{runMonthLabel(billingMonth)} · Billing Period</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 w-full sm:w-auto">
             <GenerateMonthDropdown
