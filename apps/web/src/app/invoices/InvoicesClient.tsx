@@ -1316,10 +1316,16 @@ function InvoiceQueueView({
 }
 
 /* ─── All Time Entries view ──────────────────────────────────── */
-function AllTimeEntriesView({ timeEntries }: { timeEntries: TimeEntryRow[] }) {
+function AllTimeEntriesView({ timeEntries, onSyncNow, qbTimeConnected }: {
+  timeEntries: TimeEntryRow[]
+  onSyncNow: () => Promise<void>
+  qbTimeConnected: boolean
+}) {
   // Months that actually have synced entries, newest first.
   const months = Array.from(new Set(timeEntries.map((e) => e.month))).sort().reverse();
 
+  const router = useRouter();
+  const [isSyncing, setIsSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [monthFilter, setMonthFilter] = useState<string>(months[0] ?? ""); // "" = all months; default = latest
   const [clientFilter, setClientFilter] = useState("");
@@ -1354,6 +1360,13 @@ function AllTimeEntriesView({ timeEntries }: { timeEntries: TimeEntryRow[] }) {
   const filteredAmount = filtered.reduce((sum, e) => sum + e.amount, 0);
   const filteredClientCount = new Set(filtered.map((e) => e.client)).size;
 
+  async function handleSync() {
+    setIsSyncing(true);
+    await onSyncNow();
+    setIsSyncing(false);
+    router.refresh();
+  }
+
   function clearFilters() {
     setSearch("");
     setClientFilter("");
@@ -1369,8 +1382,21 @@ function AllTimeEntriesView({ timeEntries }: { timeEntries: TimeEntryRow[] }) {
     <div className="flex-1 overflow-y-auto">
       {/* Page header */}
       <div className="px-4 md:px-8 pt-6 pb-4">
-        <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
-        <p className="text-sm text-gray-500 mt-0.5">QuickBooks Time import · {monthLabel}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-2xl text-gray-900 leading-tight">All Time Entries</h1>
+            <p className="text-sm text-gray-500 mt-0.5">QuickBooks Time import · {monthLabel}</p>
+          </div>
+          <button
+            onClick={handleSync}
+            disabled={isSyncing || !qbTimeConnected}
+            className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: "#2D6A4F" }}
+          >
+            <RefreshCw size={13} className={isSyncing ? "animate-spin" : ""} />
+            {isSyncing ? "Syncing…" : "Sync QB Time"}
+          </button>
+        </div>
 
         {/* Stats bar */}
         <div className="flex items-center gap-1 mt-3 flex-wrap">
@@ -2788,7 +2814,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             generating={generating}
           />
         )}
-        {activeView === "time-entries" && <AllTimeEntriesView timeEntries={timeEntries} />}
+        {activeView === "time-entries" && <AllTimeEntriesView timeEntries={timeEntries} onSyncNow={handleSyncNow} qbTimeConnected={qbTimeConnected} />}
         {activeView === "client-rules" && (
           <ClientRulesView
             sharedHighTouch={sharedHighTouch}
