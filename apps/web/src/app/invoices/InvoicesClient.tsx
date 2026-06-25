@@ -233,6 +233,7 @@ export interface InvoicesClientProps {
   qbTimeConnectedAt: string | null;
   customers: DbCustomer[];
   firmName: string;
+  role: string;
   currentRun: { billingMonth: string; status: string } | null;
   availableRuns: { billingMonth: string; status: string }[];
   defaultGenerateMonth: string;
@@ -704,6 +705,7 @@ function InvoiceQueueView({
   generateMonthOptions,
   onGenerateMonthChange,
   generating,
+  canSend,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
@@ -722,6 +724,7 @@ function InvoiceQueueView({
   generateMonthOptions: string[];
   onGenerateMonthChange: (v: string) => void;
   generating: boolean;
+  canSend: boolean;
 }) {
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [sendingAll, setSendingAll] = useState(false);
@@ -1227,31 +1230,35 @@ function InvoiceQueueView({
                           <span className="text-sm text-gray-500">Invoice total</span>
                           <span className="font-mono text-2xl font-medium text-gray-900">{formatCurrency(amount)}</span>
                         </div>
-                        <button
-                          onClick={() => createDraft(template.id)}
-                          disabled={savingIds.has(template.id)}
-                          className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
-                          style={{ backgroundColor: "#2D6A4F" }}
-                          onMouseEnter={(e) => { if (!savingIds.has(template.id)) e.currentTarget.style.backgroundColor = "#40916C"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
-                        >
-                          {savingIds.has(template.id) ? (
-                            <>
-                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                              Saving…
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              Approve &amp; Send Invoice
-                            </>
-                          )}
-                        </button>
+                        {canSend ? (
+                          <button
+                            onClick={() => createDraft(template.id)}
+                            disabled={savingIds.has(template.id)}
+                            className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
+                            style={{ backgroundColor: "#2D6A4F" }}
+                            onMouseEnter={(e) => { if (!savingIds.has(template.id)) e.currentTarget.style.backgroundColor = "#40916C"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
+                          >
+                            {savingIds.has(template.id) ? (
+                              <>
+                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                Saving…
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Approve &amp; Send Invoice
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <p className="text-xs text-gray-400 italic">Sending is restricted to the firm owner.</p>
+                        )}
                       </div>
 
                     </div>
@@ -1281,34 +1288,38 @@ function InvoiceQueueView({
               </span>
             )}
           </div>
-          <button
-            onClick={createAllDrafts}
-            disabled={pendingTemplates.length === 0 || sendingAll}
-            className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full sm:w-auto"
-            style={{ backgroundColor: pendingTemplates.length > 0 ? "#2D6A4F" : "#9ca3af" }}
-            onMouseEnter={(e) => { if (pendingTemplates.length > 0 && !sendingAll) e.currentTarget.style.backgroundColor = "#40916C"; }}
-            onMouseLeave={(e) => { if (pendingTemplates.length > 0) e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
-          >
-            {sendingAll ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                <span>Sending…</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <span className="flex flex-col items-start">
-                  <span>Send All Approved Invoices</span>
-                  <span className="text-xs opacity-60 font-normal">Creates and sends via QuickBooks Online</span>
-                </span>
-              </>
-            )}
-          </button>
+          {canSend ? (
+            <button
+              onClick={createAllDrafts}
+              disabled={pendingTemplates.length === 0 || sendingAll}
+              className="flex items-center justify-center gap-2 text-sm font-medium px-5 py-2.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed w-full sm:w-auto"
+              style={{ backgroundColor: pendingTemplates.length > 0 ? "#2D6A4F" : "#9ca3af" }}
+              onMouseEnter={(e) => { if (pendingTemplates.length > 0 && !sendingAll) e.currentTarget.style.backgroundColor = "#40916C"; }}
+              onMouseLeave={(e) => { if (pendingTemplates.length > 0) e.currentTarget.style.backgroundColor = "#2D6A4F"; }}
+            >
+              {sendingAll ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span>Sending…</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="flex flex-col items-start">
+                    <span>Send All Approved Invoices</span>
+                    <span className="text-xs opacity-60 font-normal">Creates and sends via QuickBooks Online</span>
+                  </span>
+                </>
+              )}
+            </button>
+          ) : (
+            <p className="text-xs text-gray-400 italic">Sending is restricted to the firm owner.</p>
+          )}
         </div>
       </div>
     </div>
@@ -2330,7 +2341,7 @@ function ClientMappingView({
 }
 
 /* ─── Settings view ──────────────────────────────────────────── */
-function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow, firmName, templates, allEntries, liveTotalBilling }: {
+function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSyncNow, firmName, templates, allEntries, liveTotalBilling, canConnect }: {
   qboConnected: boolean
   qbTimeConnected: boolean
   qbTimeConnectedAt: string | null
@@ -2339,6 +2350,7 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
   templates: InvoiceTemplate[]
   allEntries: FlatEntry[]
   liveTotalBilling: number
+  canConnect: boolean
 }) {
   return (
     <div className="flex-1 overflow-y-auto">
@@ -2384,13 +2396,15 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
                     <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
                       Not Connected
                     </span>
-                    <a
-                      href="/api/auth/qb-time/connect"
-                      className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ backgroundColor: "#2D6A4F" }}
-                    >
-                      Connect QB Time
-                    </a>
+                    {canConnect && (
+                      <a
+                        href="/api/auth/qb-time/connect"
+                        className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                        style={{ backgroundColor: "#2D6A4F" }}
+                      >
+                        Connect QB Time
+                      </a>
+                    )}
                   </>
                 )}
               </div>
@@ -2409,13 +2423,15 @@ function SettingsView({ qboConnected, qbTimeConnected, qbTimeConnectedAt, onSync
                     <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: "#F1F5F9", color: "#475569" }}>
                       Not Connected
                     </span>
-                    <a
-                      href="/api/auth/qbo/connect"
-                      className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ backgroundColor: "#2D6A4F" }}
-                    >
-                      Connect
-                    </a>
+                    {canConnect && (
+                      <a
+                        href="/api/auth/qbo/connect"
+                        className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                        style={{ backgroundColor: "#2D6A4F" }}
+                      >
+                        Connect
+                      </a>
+                    )}
                   </>
                 )}
                 <span className="text-xs text-gray-400">Draft invoices only</span>
@@ -2598,7 +2614,9 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, timeEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, currentRun, availableRuns, defaultGenerateMonth }: InvoicesClientProps) {
+export default function InvoicesClient({ templates, allEntries, timeEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, role, currentRun, availableRuns, defaultGenerateMonth }: InvoicesClientProps) {
+  const canSend = role === 'owner' || role === 'admin'
+  const canConnect = role === 'owner' || role === 'admin'
   const router = useRouter();
   const billingMonth = currentRun?.billingMonth ?? null;
   const [activeView, setActiveView] = useState<NavView>("billing-run");
@@ -2798,6 +2816,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             generateMonthOptions={generateMonthOptions}
             onGenerateMonthChange={setGenerateMonth}
             generating={generating}
+            canSend={canSend}
           />
         )}
         {activeView === "billing-run" && (
@@ -2841,6 +2860,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             templates={templates}
             allEntries={allEntries}
             liveTotalBilling={liveTotalBilling}
+            canConnect={canConnect}
           />
         )}
       </div>

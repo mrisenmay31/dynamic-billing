@@ -52,13 +52,14 @@ export default async function InvoicesPage(
   // it rather than redirecting to /login (which would loop against middleware).
   const { data: firmUser } = await adminClient
     .from('firm_users')
-    .select('firm_id')
+    .select('firm_id, role')
     .eq('user_id', user.id)
     .maybeSingle()
   if (!firmUser) {
     throw new Error('Your account is not linked to a firm. Contact support@ctaintegrity.com.')
   }
   const firmId = firmUser.firm_id
+  const role: string = firmUser.role ?? 'admin'
 
   const { data: firm } = await supabase
     .from('firms')
@@ -205,6 +206,7 @@ export default async function InvoicesPage(
       qbTimeConnected={qbTimeConnected}
       qbTimeConnectedAt={qbTimeConnectedAt}
       firmName={firmName}
+      role={role}
       currentRun={billingRun ? { billingMonth: billingRun.billing_month, status: billingRun.status } : null}
       availableRuns={(allRuns ?? []).map(r => ({ billingMonth: r.billing_month, status: r.status }))}
       defaultGenerateMonth={defaultGenerateMonth}

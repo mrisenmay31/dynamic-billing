@@ -6,6 +6,12 @@ type ServerClient = Awaited<ReturnType<typeof createClient>>
 export interface FirmContext {
   userId: string
   firmId: string
+  role: string
+}
+
+/** Returns true for roles with full access (owner or legacy admin). */
+export function isOwner(role: string): boolean {
+  return role === 'owner' || role === 'admin'
 }
 
 /**
@@ -25,11 +31,11 @@ export async function getFirmContext(
 
   const { data: firmUser } = await adminClient
     .from('firm_users')
-    .select('firm_id')
+    .select('firm_id, role')
     .eq('user_id', user.id)
     .maybeSingle()
 
   if (!firmUser) return null
 
-  return { userId: user.id, firmId: firmUser.firm_id }
+  return { userId: user.id, firmId: firmUser.firm_id, role: firmUser.role ?? 'admin' }
 }

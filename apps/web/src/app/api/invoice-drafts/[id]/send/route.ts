@@ -6,7 +6,7 @@ import { assertQboWriteEnabled } from '@/lib/qbo/write-guard'
 import { fetchOrCreateQboItemId, fetchQboCustomerEmail, createQboInvoice, sendQboInvoice } from '@/lib/qbo/invoices'
 import { recomputeBillingRunStatus } from '@/lib/billing/run-status'
 import { logAudit } from '@/lib/audit/log'
-import { getFirmContext } from '@/lib/auth/firm'
+import { getFirmContext, isOwner } from '@/lib/auth/firm'
 
 const QBO_ITEM_NAME = process.env.QBO_ITEM_NAME ?? 'Hourly Accounting services'
 
@@ -17,7 +17,11 @@ export async function POST(
   const supabase = await createClient()
   const ctx = await getFirmContext(supabase)
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { userId, firmId } = ctx
+  const { userId, firmId, role } = ctx
+
+  if (!isOwner(role)) {
+    return NextResponse.json({ error: 'Sending invoices is restricted to firm owners.' }, { status: 403 })
+  }
 
   const { id } = await params
 
