@@ -302,6 +302,8 @@ Confirm each before declaring "ready for tomorrow":
 - [ ] Rounding = ceiling to next 0.25 (TC-10)
 - [ ] Aggregation = one line item per client (TC-10/TC-12)
 - [ ] Magic-link / invite flow works (needed to create Lea Ann's + Amber's users)
+- [ ] Assistant role enforced server-side (TC-19): direct `curl` to send + connect returns 403; owner unaffected
+- [ ] No non-billable / flat-rate time generates a draft (TC-17) — **#1 correctness gate**
 
 ---
 
@@ -309,7 +311,7 @@ Confirm each before declaring "ready for tomorrow":
 
 Things the dry run can't fully cover but must be queued for the live session:
 
-1. **Invite Lea Ann + Amber** via magic link → creates their auth users. Confirm each lands in a `firm_users` row for **P&L** (`00000000-…0001`), not CTA. *(Amber as admin assistant — her access model is a decision that may need code before tomorrow; see Appendix A.)*
+1. **Invite Lea Ann + Amber** via magic link → creates their auth users. Confirm each lands in a `firm_users` row for **P&L** (`00000000-…0001`), not CTA. Then **set roles** (Appendix A.6): Lea Ann = `owner`, Amber = `assistant`. The No-send assistant tier is already built (commit `4644b52`) — just assign the roles; verify behavior with TC-19.
 2. **P&L `qbo_write_enabled`** must be `true` before any real send.
 3. **P&L firm defaults** — set rate ($125) + description ("Monthly Bookkeeping").
 4. **Known-duplicate customer list** — get from Lea Ann to pre-empt mapping confusion.
@@ -383,10 +385,14 @@ Find the discrepancy, fix, add a quick unit check if practical. tsc clean, commi
 2. §2 reset + verify (10 min)
 3. TC-1 → TC-2 empty states (10 min)
 4. TC-3 → TC-8 connect + sync + map (30 min)
-5. TC-9 → TC-11 review (15 min)
-6. TC-12 → TC-15 send + dashboards (20 min) ⚠️ real invoice
-7. §4 edge cases (20 min)
-8. §5 checklist sign-off + §6 carry-over (10 min)
+5. **TC-17 non-billable / flat-rate** (10 min) — run right after the first real sync; it's the #1 correctness risk and gates whether you hand Appendix C to the terminal. *(On CTA data the investigation may be partial; the definitive check is Lea Ann's real jobcodes tomorrow.)*
+6. **TC-18 duplicate-profile merge** (10 min) — if you have two jobcodes for one client to test with.
+7. TC-9 → TC-11 review (15 min)
+8. TC-12 → TC-15 send + dashboards (20 min) ⚠️ real invoice
+9. **TC-19 assistant role enforcement** (10 min) — flip CTA role to `assistant`, run the UI + `curl` 403 checks, flip back to `admin`.
+10. TC-16 settings/account housekeeping (5 min)
+11. §4 edge cases (20 min)
+12. §5 checklist sign-off + §6 carry-over (10 min)
 
 Log bugs as you go; batch the non-P0s to the terminal session at the end so the walk-through stays continuous.
 
@@ -395,10 +401,12 @@ Log bugs as you go; batch the non-P0s to the terminal session at the end so the 
 ## Appendix A — Amber role/permissions spec
 
 > **DECISION (2026-06-25): Option 2 — No-send assistant.** Amber preps (sync, map, generate, review/edit); Lea Ann owns Approve & Send and integration connect/disconnect. Build spec = A.3; ready-to-run terminal prompt = A.5.
+>
+> **✅ STATUS: IMPLEMENTED & code-reviewed in commit `4644b52`.** Server 403 guards on the send + both connect routes; `isOwner()` in `src/lib/auth/firm.ts` (treats `admin`/`owner` as full access); UI gating via `canSend`/`canConnect`. **Verify it during the run via TC-19**, and assign roles tomorrow via A.6. A.1–A.5 below are kept as the spec/decision record.
 
-**Context.** Amber (admin assistant at P&L) and Lea Ann (owner) will both be members of the P&L firm. The chosen access model and its build spec are below.
+**Context.** Amber (administrative assistant at P&L; she gets the `assistant` *role*, not `admin`) and Lea Ann (owner) will both be members of the P&L firm. The chosen access model and its build spec are below.
 
-### A.1 Current reality (as built today)
+### A.1 Background (the gap before commit `4644b52` — now closed; kept for context)
 
 - `firm_users.role` exists (`text not null default 'admin'`) but is **read nowhere** in the app. `getFirmContext()` (`src/lib/auth/firm.ts:26`) selects only `firm_id`; no route checks `role`.
 - **Therefore there is no access control.** Any user in a firm's `firm_users` has **identical full access**: connect/disconnect QBO + QB Time, sync, generate drafts, edit hours/description/rate, and **Approve & Send real invoices**.
@@ -453,7 +461,7 @@ What should Amber be able to do? Pick a target tier:
 
 No code, but **explicitly accept** that Amber can send real invoices to P&L's clients. If that's acceptable for the pilot, document it and move on — revisit role enforcement post-UAT.
 
-### A.5 Terminal prompt to build Option 2 (ready to paste)
+### A.5 Terminal prompt that built Option 2 (for reference — already executed in `4644b52`)
 
 ```
 On branch claude/cta-integrity-onboarding-test-7tazih (apps/web, Next.js 15). Implement
