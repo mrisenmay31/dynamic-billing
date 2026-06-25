@@ -1,0 +1,23 @@
+## 2026-06-25 — Lane B — TC-17 Path B (exclude_from_billing)
+- Branch / worktree: claude/cta-billable-fix (../db-lane-b)
+- Status: DONE
+- Migration: `20260625000000_add_exclude_from_billing.sql` — applied to prod? **yes** (via Supabase MCP apply_migration)
+- Files changed:
+  - `apps/web/supabase/migrations/20260625000000_add_exclude_from_billing.sql` — new migration
+  - `apps/web/src/types/supabase.ts` — regenerated; adds `exclude_from_billing: boolean` to customers Row/Insert/Update
+  - `apps/web/src/lib/billing/engine.ts` — selects `exclude_from_billing`, skips customers where true
+  - `apps/web/src/app/api/customers/[id]/route.ts` — PATCH handler accepts + persists `exclude_from_billing`
+- What I changed & why:
+  - Added `exclude_from_billing boolean not null default false` to `customers` — additive, zero blast radius for existing rows
+  - Engine now selects the column and `continue`s past any excluded customer when building drafts — the customer gets no `DraftPayload` even if it has mapped time entries
+  - PATCH route extended with typed `CustomerUpdate` patch object so the flag can be toggled via API (UI toggle is Lane A follow-up)
+  - Used `Database['public']['Tables']['customers']['Update']` type instead of `Record<string, unknown>` to satisfy Supabase's `RejectExcessProperties` strict type
+- Verification:
+  - tsc: **PASS** (zero errors after symlinking worktree node_modules from main)
+  - Excluded-customer test: inserted test excluded + test normal customer with June entries; both appear in raw time_entries query; engine's `exclude_from_billing` filter (simulated in SQL) correctly surfaces only the normal customer — **PASS**
+  - P&L seed regression: KTA, Baine, Knox PT all have `exclude_from_billing=false` (confirmed via SQL) — **PASS**
+  - Test data cleaned up; Baine reset to `false` after intermediate exclusion test
+- Commit(s): see git log
+- NOT done / out of scope: `is_billable` plumbing untouched (deferred to TC-4 Path A decision); UI toggle in Client Rules/Mapping is a Lane A follow-up
+- Handoff: UI toggle (Client Rules or Client Mapping view) still needed before onboarding so Lea Ann can flag flat-rate clients without SQL — Lane A owns it
+- Bug IDs (test plan §7): B-01 (non-billable time generates drafts for mapped flat-rate clients)

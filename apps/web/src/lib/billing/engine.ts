@@ -42,7 +42,7 @@ export async function computeBillingDrafts(
   const customerIds = Array.from(secondsByCustomer.keys())
   const { data: customers, error: customersError } = await supabase
     .from('customers')
-    .select('id, hourly_rate_override, invoice_description_override')
+    .select('id, hourly_rate_override, invoice_description_override, exclude_from_billing')
     .in('id', customerIds)
 
   if (customersError) throw new Error(`Failed to fetch customers: ${customersError.message}`)
@@ -51,14 +51,18 @@ export async function computeBillingDrafts(
     (customers ?? []).map((c) => [c.id, c])
   )
 
-  return customerIds.map((customerId) => {
+  const drafts: DraftPayload[] = []
+  for (const customerId of customerIds) {
+    const customer = customerMap.get(customerId)
+    if (customer?.exclude_from_billing) continue
+
     const rawSeconds = secondsByCustomer.get(customerId)!
     const roundedHours = Math.ceil(rawSeconds / 900) * 0.25
-    const customer = customerMap.get(customerId)
     const rate = customer?.hourly_rate_override ?? firmDefaultRate
     const description = customer?.invoice_description_override ?? firmDefaultDescription
     const totalAmount = Math.round(roundedHours * rate * 100) / 100
 
-    return { customerId, rawSeconds, roundedHours, rate, totalAmount, description }
-  })
+    drafts.push({ customerId, rawSeconds, roundedHours, rate, totalAmount, description })
+  }
+  return drafts
 }
