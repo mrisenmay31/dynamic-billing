@@ -12,6 +12,17 @@
 
 ---
 
+## Branching & environment
+
+A git branch does **not** isolate this dry run — the things it touches (the production Supabase database and the live app deployed from `main`) are not version-controlled. So:
+
+- **The reset and walk-through run on production by design.** This exercises the real Intuit OAuth redirect URIs, real QBO, and the exact deploy Lea Ann sees tomorrow. A preview/branch deploy would fail OAuth (redirect URIs are registered for `app.clocktobill.com`) and would test a *different* environment than the live one — not worth it the night before.
+- **Your safety net is data-level, not git-level:** (1) the reset SQL is **scoped to the CTA firm** so P&L's seed is untouched, and (2) the **Supabase snapshot** from §1.7 is your only undo. Take it before §2.
+- **Code stays on `claude/cta-integrity-onboarding-test-7tazih`.** Fixes from the dry run are committed there.
+- **Do not merge any fix to `main` mid-run.** `main` auto-deploys to the production app; merging an unverified change would alter the environment under your feet (and the one Lea Ann hits tomorrow). Re-verify a fix on the branch, then merge deliberately — ideally after the dry run, not during it.
+
+---
+
 ## 0. Ground rules & safety
 
 1. **All destructive SQL is scoped to `firm_id = '0a2a776d-...8'`.** Never run an unscoped `DELETE`. Every statement in §2 has a `WHERE firm_id = ...` clause — verify it is present before executing.
@@ -252,7 +263,7 @@ Confirm each before declaring "ready for tomorrow":
 
 Things the dry run can't fully cover but must be queued for the live session:
 
-1. **Invite Lea Ann + Amber** via magic link → creates their auth users. Confirm each lands in a `firm_users` row for **P&L** (`00000000-…0001`), not CTA. *(Amber as admin assistant — decide her role/permissions; app currently has a single `role` field.)*
+1. **Invite Lea Ann + Amber** via magic link → creates their auth users. Confirm each lands in a `firm_users` row for **P&L** (`00000000-…0001`), not CTA. *(Amber as admin assistant — her access model is a decision that may need code before tomorrow; see Appendix A.)*
 2. **P&L `qbo_write_enabled`** must be `true` before any real send.
 3. **P&L firm defaults** — set rate ($125) + description ("Monthly Bookkeeping").
 4. **Known-duplicate customer list** — get from Lea Ann to pre-empt mapping confusion.
@@ -330,3 +341,66 @@ Find the discrepancy, fix, add a quick unit check if practical. tsc clean, commi
 8. §5 checklist sign-off + §6 carry-over (10 min)
 
 Log bugs as you go; batch the non-P0s to the terminal session at the end so the walk-through stays continuous.
+
+---
+
+## Appendix A — Amber role/permissions spec
+
+**Decision needed before tomorrow.** Amber (admin assistant at P&L) and Lea Ann (owner) will both be members of the P&L firm. Decide what Amber can do, then choose how much (if any) code to build for it before the meeting.
+
+### A.1 Current reality (as built today)
+
+- `firm_users.role` exists (`text not null default 'admin'`) but is **read nowhere** in the app. `getFirmContext()` (`src/lib/auth/firm.ts:26`) selects only `firm_id`; no route checks `role`.
+- **Therefore there is no access control.** Any user in a firm's `firm_users` has **identical full access**: connect/disconnect QBO + QB Time, sync, generate drafts, edit hours/description/rate, and **Approve & Send real invoices**.
+- `getFirmContext` resolves the user's firm via `.maybeSingle()` on `firm_users` by `user_id` — it assumes **one firm per user**. Adding Amber to P&L is one row and works fine; it does **not** assume one user per firm.
+- Net: if we do nothing, **Amber can send invoices to clients** exactly like Lea Ann. That is the gap to close (or knowingly accept) for the pilot.
+
+### A.2 The decision
+
+What should Amber be able to do? Pick a target tier:
+
+| Capability | Owner (Lea Ann) | **Option 1: Full** (no code) | **Option 2: No-send** (recommended) | **Option 3: Read-only** |
+|---|---|---|---|---|
+| View runs / queue / entries / dashboards | ✅ | ✅ | ✅ | ✅ |
+| Sync QB Time / QBO | ✅ | ✅ | ✅ | ❌ |
+| Map jobcodes ↔ customers | ✅ | ✅ | ✅ | ❌ |
+| Generate drafts | ✅ | ✅ | ✅ | ❌ |
+| Edit hours / description / rate in queue | ✅ | ✅ | ✅ | ❌ |
+| **Approve & Send invoice (real, to clients)** | ✅ | ✅ | **❌ blocked** | ❌ |
+| Connect/disconnect integrations | ✅ | ✅ | ❌ | ❌ |
+| Code required before tomorrow | — | **None** | **Small** | Medium |
+
+**Recommendation: Option 2 (No-send assistant).** It matches the real division of labor — Amber does the prep (sync, map, generate, review/adjust), Lea Ann keeps the one irreversible, client-facing action (sending real invoices). It also aligns with the product's core "review gate is non-negotiable" principle: the owner owns the send.
+
+### A.3 Concrete spec for Option 2 (No-send)
+
+**Role model**
+- Define two roles in `firm_users.role`: `owner` (Lea Ann) and `assistant` (Amber). Keep `admin` as an alias for `owner` so existing rows (default `'admin'`) keep full access — no migration/backfill needed.
+- Helper: extend `getFirmContext()` to also select and return `role` (one-line change to the select + the `FirmContext` interface in `src/lib/auth/firm.ts`).
+
+**Enforcement (server-side — the security boundary)**
+- Gate the **send** route: `src/app/api/invoice-drafts/[id]/send/route.ts` returns **403** if `role` is not `owner`/`admin`. This is the only must-have for correctness — it's the irreversible action.
+- Decide whether to also gate integration connect/disconnect (`src/app/api/auth/qbo/connect`, `qb-time/connect`) for assistants. Recommended yes (low effort, same pattern), but not strictly required for pilot since reconnecting isn't destructive.
+- Everything else (sync, generate, map, PATCH draft edits) stays open to assistants per the table.
+- **Server enforcement is mandatory** — UI hiding alone is not security; the route is the boundary.
+
+**UI (secondary — prevents confusion, not a security control)**
+- In `InvoicesClient.tsx`, when the current user is an assistant: hide/disable the **"Approve & Send Invoice"** and **"Send All Approved Invoices"** buttons and show a short note ("Sending is restricted to the firm owner"). Pass the role from the server component (`page.tsx`) down as a prop, same way `qboConnected` is passed.
+- Leave all review/edit controls active so Amber can fully prep invoices.
+
+**Out of scope for tomorrow (note, don't build):** invitation UI with role selection, multiple-firm membership, granular per-capability permissions, audit of who-changed-what beyond existing `audit_logs`. For the pilot, roles are assigned by SQL when inviting.
+
+**Acceptance criteria (Option 2)**
+- [ ] Amber (role `assistant`) can sync, map, generate, and edit drafts.
+- [ ] Amber clicking send (or hitting the endpoint directly) gets **403**; no QBO invoice is created.
+- [ ] Lea Ann (role `owner`/`admin`) retains full send capability.
+- [ ] Existing CTA/P&L `admin` rows are unaffected (treated as owner).
+- [ ] Send buttons are hidden/disabled in Amber's UI.
+
+**Effort:** ~small — one field added to `getFirmContext`, one role check in the send route (+ optionally connect routes), and a prop-drilled conditional on two buttons. No DB migration if `admin` is treated as owner.
+
+### A.4 If you choose Option 1 (Full, ship as-is)
+
+No code, but **explicitly accept** that Amber can send real invoices to P&L's clients. If that's acceptable for the pilot, document it and move on — revisit role enforcement post-UAT.
+
+> **Ask Matt to pick A.2 Option 1 / 2 / 3 today.** If Option 2 or 3, hand Appendix A.3 to the terminal session now (prompt template 8.1 with this section pasted in) so the change is built and verified on the branch before tomorrow — not merged to `main` until after the dry run.
