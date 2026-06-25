@@ -184,6 +184,80 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // ── Reconciliation sweep: remove entries deleted in QB Time ──────────────
+    let swept = 0
+    let protected_ = 0
+
+    if (timesheets.length === 0) {
+      // Empty fetch is treated as "nothing to reconcile" — never mass-delete
+      console.warn('[sync-timesheets] empty fetch; skipping reconciliation sweep to avoid mass-delete')
+    } else {
+      try {
+        const fetchedIds = new Set(timesheets.map(t => String(t.id)))
+
+        // Window bounds in Eastern time, matching how started_at is bucketed on upsert
+        const lower = toEasternMidnightISO(start_date)
+        // Add one calendar day to make the upper bound exclusive so end_date is fully included
+        const endPlusOne = new Date(`${end_date}T12:00:00Z`)
+        endPlusOne.setUTCDate(endPlusOne.getUTCDate() + 1)
+        const nextDay = endPlusOne.toISOString().slice(0, 10)
+        const upper = toEasternMidnightISO(nextDay)
+
+        const { data: existing, error: existErr } = await adminClient
+          .from('time_entries')
+          .select('id, qb_time_entry_id, customer_id')
+          .eq('firm_id', firmId)
+          .gte('started_at', lower)
+          .lt('started_at', upper)
+
+        if (existErr) throw existErr
+
+        const orphans = (existing ?? []).filter(
+          row => !fetchedIds.has(row.qb_time_entry_id)
+        )
+
+        if (orphans.length > 0) {
+          // Protect orphans whose customer already has a sent invoice — they need human review
+          const { data: sentDrafts } = await adminClient
+            .from('invoice_drafts')
+            .select('customer_id')
+            .eq('firm_id', firmId)
+            .eq('status', 'sent')
+
+          const sentCustomerIds = new Set((sentDrafts ?? []).map(d => d.customer_id))
+
+          const toDelete: string[] = []
+          for (const orphan of orphans) {
+            if (orphan.customer_id && sentCustomerIds.has(orphan.customer_id)) {
+              console.warn(
+                `[sync-timesheets] protected orphan time_entry id=${orphan.id} ` +
+                `qb_time_entry_id=${orphan.qb_time_entry_id} — entry deleted in QB Time ` +
+                `after invoice was sent for customer_id=${orphan.customer_id}; needs human review`
+              )
+              protected_++
+            } else {
+              toDelete.push(orphan.id)
+            }
+          }
+
+          if (toDelete.length > 0) {
+            const { error: delErr } = await adminClient
+              .from('time_entries')
+              .delete()
+              .eq('firm_id', firmId)
+              .in('id', toDelete)
+
+            if (delErr) throw delErr
+            swept = toDelete.length
+          }
+        }
+      } catch (sweepErr) {
+        // Sweep failure is reported but does not undo successful upserts
+        console.error('[sync-timesheets] reconciliation sweep error:', sweepErr)
+      }
+    }
+    // ── End reconciliation sweep ──────────────────────────────────────────────
+
     await adminClient.from('integration_sync_logs').insert({
       firm_id: firmId,
       integration: 'qb_time',
@@ -195,10 +269,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       records_skipped: skipped,
       started_at: startedAt,
       completed_at: new Date().toISOString(),
-      error_details: { start_date, end_date },
+      error_details: { start_date, end_date, swept, protected: protected_ },
     })
 
-    return NextResponse.json({ processed: timesheets.length, upserted, skipped })
+    return NextResponse.json({ processed: timesheets.length, upserted, skipped, swept, protected: protected_ })
   } catch (err) {
     const error = err as Error
     const message = error.message ?? 'Unknown error'
