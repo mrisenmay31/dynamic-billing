@@ -700,6 +700,7 @@ function InvoiceQueueView({
   onGenerate,
   firmName,
   billingMonth,
+  runBillingMonth,
   addToast,
   generateMonth,
   generateMonthOptions,
@@ -719,6 +720,7 @@ function InvoiceQueueView({
   onGenerate: () => Promise<void>;
   firmName: string;
   billingMonth: string;
+  runBillingMonth: string | null;
   addToast: (message: string) => void;
   generateMonth: string;
   generateMonthOptions: string[];
@@ -825,7 +827,11 @@ function InvoiceQueueView({
         <div className="px-4 md:px-8 py-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl text-white leading-tight">Invoice Queue</h1>
-            <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>{runMonthLabel(billingMonth)} · Billing Period</p>
+            <p className="text-sm mt-0.5" style={{ color: "#D8F3DC" }}>
+              {runBillingMonth
+                ? `${runMonthLabel(runBillingMonth)} · Billing Period`
+                : "No billing run yet — sync time entries, then Generate Drafts."}
+            </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 w-full sm:w-auto">
             <GenerateMonthDropdown
@@ -1270,8 +1276,8 @@ function InvoiceQueueView({
         </div>
       </div>
 
-      {/* Bottom action bar */}
-      <div className="border-t border-gray-200 bg-white shadow-lg z-40">
+      {/* Bottom action bar — only shown when a billing run exists */}
+      {runBillingMonth && <div className="border-t border-gray-200 bg-white shadow-lg z-40">
         <div className="px-4 md:px-8 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-w-4xl">
           <div className="flex items-baseline gap-2 flex-wrap">
             {pendingTemplates.length > 0 ? (
@@ -1321,7 +1327,7 @@ function InvoiceQueueView({
             <p className="text-xs text-gray-400 italic">Sending is restricted to the firm owner.</p>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -1553,15 +1559,25 @@ function AllTimeEntriesView({ timeEntries, onSyncNow, qbTimeConnected }: {
       <div className="px-4 md:px-8 pb-10 pt-4">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Search className="w-8 h-8 text-gray-300 mb-3" />
-            <h3 className="text-base font-medium text-gray-600">No entries match your filters</h3>
-            <p className="text-sm text-gray-400 mt-1">Try adjusting your search or clearing the filters</p>
-            <button
-              onClick={clearFilters}
-              className="mt-4 text-sm font-medium px-4 py-2 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-300 transition-colors"
-            >
-              Clear filters
-            </button>
+            {timeEntries.length === 0 ? (
+              <>
+                <Search className="w-8 h-8 text-gray-300 mb-3" />
+                <h3 className="text-base font-medium text-gray-600">No time entries yet</h3>
+                <p className="text-sm text-gray-400 mt-1">Connect QuickBooks Time in Settings and Sync to import your entries.</p>
+              </>
+            ) : (
+              <>
+                <Search className="w-8 h-8 text-gray-300 mb-3" />
+                <h3 className="text-base font-medium text-gray-600">No entries match your filters</h3>
+                <p className="text-sm text-gray-400 mt-1">Try adjusting your search or clearing the filters</p>
+                <button
+                  onClick={clearFilters}
+                  className="mt-4 text-sm font-medium px-4 py-2 rounded-lg border border-gray-200 text-gray-500 hover:border-gray-300 transition-colors"
+                >
+                  Clear filters
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
@@ -1782,6 +1798,13 @@ function ClientRulesView({
                 </tr>
               </thead>
               <tbody>
+                {templates.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">
+                      No clients yet — map jobcodes to customers in Client Mapping to manage per-client rules.
+                    </td>
+                  </tr>
+                )}
                 {templates.map((t, i) => {
                   const isHT = sharedHighTouch[t.id];
                   const desc = sharedDescriptions[t.id];
@@ -1922,10 +1945,12 @@ function ClientMappingView({
   initialCustomers,
   qboConnected,
   qbTimeConnected,
+  onNavigateToSettings,
 }: {
   initialCustomers: DbCustomer[];
   qboConnected: boolean;
   qbTimeConnected: boolean;
+  onNavigateToSettings: () => void;
 }) {
   const [customers, setCustomers] = useState<DbCustomer[]>(initialCustomers);
   const [qboCustomers, setQboCustomers] = useState<QboCustomer[]>([]);
@@ -2097,7 +2122,7 @@ function ClientMappingView({
                 QuickBooks Online is not connected. Connect it in{" "}
                 <button
                   className="underline font-medium"
-                  onClick={() => {}}
+                  onClick={onNavigateToSettings}
                 >
                   Settings
                 </button>{" "}
@@ -2220,7 +2245,11 @@ function ClientMappingView({
             <div className="flex items-start gap-3 px-6 py-4 bg-slate-50 border-b border-slate-100">
               <Lock size={15} className="text-slate-400 mt-0.5 shrink-0" />
               <p className="text-sm text-slate-500">
-                QB Time is not connected yet. Connect it in Settings, then sync to import jobcodes here.
+                QB Time is not connected yet. Connect it in{" "}
+                <button className="underline font-medium" onClick={onNavigateToSettings}>
+                  Settings
+                </button>
+                , then sync to import jobcodes here.
               </p>
             </div>
           ) : jobcodes.length === 0 ? (
@@ -2811,6 +2840,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             onGenerate={handleGenerate}
             firmName={firmName}
             billingMonth={activeBillingMonth}
+            runBillingMonth={billingMonth}
             addToast={addToast}
             generateMonth={generateMonth}
             generateMonthOptions={generateMonthOptions}
@@ -2848,7 +2878,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
           />
         )}
         {activeView === "client-mapping" && (
-          <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} />
+          <ClientMappingView initialCustomers={customers} qboConnected={qboConnected} qbTimeConnected={qbTimeConnected} onNavigateToSettings={() => setActiveView("settings")} />
         )}
         {activeView === "settings" && (
           <SettingsView
