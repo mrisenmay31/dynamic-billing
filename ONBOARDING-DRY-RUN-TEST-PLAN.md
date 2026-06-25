@@ -213,6 +213,7 @@ Walk these **in order** — each depends on the previous. For every case: perfor
 - **Do:** With ≥2 remaining drafts, "Send All Approved Invoices."
 - **Expected:** Each sends (parallel); all flip to "Sent"; batch toast with count; billing run status → Sent / Partially Sent.
 - **Watch for:** One failure aborting the batch vs. isolating; partial-send leaving run status wrong; rate limiting on rapid QBO calls.
+- **⚠️ Scale risk (from 5-20 call):** Lea Ann sends **164–187 invoices/month**; the prototype only showed 3. "Send All" fires sends in parallel (`Promise.all`), so a real run = hundreds of QBO **create + send** calls in a burst. QB Time allows **300 req / 5 min**; QBO has its own throttle. A 160-invoice burst could hit limits, partially fail, and leave the run half-sent. **Test with a realistic batch (or at least 10–20)** and watch for 429s / partial failure. If it throttles, the terminal session likely needs **batching/concurrency-limiting + retry** on the bulk send. Also sanity-check that the queue UI renders 150+ expandable cards without lag.
 
 ### TC-15 — Billing Run dashboard accuracy
 - **Do:** Billing Run view after sends.
@@ -223,6 +224,25 @@ Walk these **in order** — each depends on the previous. For every case: perfor
 - **Do:** Confirm integration status, billing config copy, support contact. Test "Reset password" link and "Sign out."
 - **Expected:** Sign out → `/login`; reset link → forgot-password flow works.
 - **Watch for:** Broken links; stale connection status after sign-out/in.
+
+### TC-17 — Non-billable / flat-rate time exclusion ⚠️ CRITICAL (from 5-20 call)
+**Why:** Lea Ann's hard requirement: *"I don't want to see anything that comes over here that says no [non-billable]."* She logs **non-billable** time to flat-rate/monthly and tax clients **on purpose** (for later rate analysis). If any of those jobcodes get mapped to a customer, the system will turn that analysis time into a real hourly invoice. **The code does not protect against this** — `sync-timesheets/route.ts:167` hardcodes `is_billable: true`, and `engine.ts:28`'s `is_billable` filter is therefore a no-op. The *only* safeguard today is "don't map flat-rate jobcodes."
+- **Do:**
+  1. After TC-8 sync, in **All Time Entries**, look for any jobcode that is a flat-rate/monthly/tax client. Confirm whether such time was pulled in.
+  2. Inspect a synced row's raw payload (DB `time_entries.source_payload`) and the synced jobcodes — **does QB Time expose a usable per-entry or per-jobcode `billable` flag for Lea Ann's account?** (CLAUDE.md claims jobcode `billable` is always false — verify against her real data.)
+  3. Deliberately map a flat-rate client's jobcode, generate drafts, and confirm whether a bogus invoice appears.
+- **Expected (desired):** No non-billable / flat-rate time produces an invoice.
+- **Watch for:** Flat-rate client showing up in the queue with an hourly total. Auto-match (sync-jobcodes / sync-qbo) silently mapping a flat-rate client by name.
+- **Decision this forces:**
+  - If her jobcodes **do** carry a meaningful billable flag → capture it on sync (stop hardcoding `true`) and let `engine.ts`'s filter do its job. *(Code change — terminal session.)*
+  - If billable is **always false** (mapping is the only gate) → make mapping discipline explicit (only map hourly clients; never map flat-rate), and consider an **"exclude from billing"** flag so a mis-mapped flat-rate client can't generate invoices. *(Code change — terminal session.)*
+- **This is the #1 correctness risk for the pilot. Resolve the decision before connecting real data for billing.**
+
+### TC-18 — Duplicate client profiles merge into one invoice (from 5-20 call)
+**Why:** Lea Ann has the **same client twice** in QuickBooks/QB Time (e.g. "P&L Business Services" listed twice); different bookkeepers (Amy, Amber) clock into different profiles. She needs both profiles' time to land on **one** invoice. The architecture supports this (multiple `customer_mappings` jobcodes → one `customer_id`), but it must be exercised.
+- **Do:** Identify two jobcodes that are really the same client → in Client Mapping, map **both** to the **same** QBO customer → sync timesheets → generate drafts.
+- **Expected:** A **single** invoice draft for that client, summing time from both jobcodes (one aggregated line item).
+- **Watch for:** Two separate drafts; backfill only updating one jobcode's entries; duplicate **QBO customer** records causing the invoice to go to the wrong one (cross-check the known-duplicate list).
 
 ---
 
@@ -267,7 +287,9 @@ Things the dry run can't fully cover but must be queued for the live session:
 2. **P&L `qbo_write_enabled`** must be `true` before any real send.
 3. **P&L firm defaults** — set rate ($125) + description ("Monthly Bookkeeping").
 4. **Known-duplicate customer list** — get from Lea Ann to pre-empt mapping confusion.
-5. **Approvals Add-On status** on Lea Ann's QB Time — determines filter behavior.
+5. **Approvals Add-On status** on Lea Ann's QB Time — determines filter behavior. *(5-20 call: she said approval visibility isn't needed — "I catch it" during payroll — so the full-month date-range filter is acceptable.)*
+6. **Set scope expectations explicitly** (see Appendix B): this pilot = **billing automation**; she **keeps BillerGenie** for the client payment portal + merchant processing. The full BillerGenie/payments replacement Matt discussed on 5-20 is **future scope** (the `payments`/`processor_transactions` tables exist but are not wired up). Don't let the demo imply the payment portal ships now.
+7. **Smart description** was demoed as auto-generated from notes/history; the build uses a simple default ("Monthly Bookkeeping") + editable field. She said customization isn't important — fine, but don't over-promise AI descriptions.
 
 ---
 
@@ -465,3 +487,44 @@ values ('00000000-0000-0000-0000-000000000001', '<lea-anns-auth-user-id>', 'owne
 on conflict (firm_id, user_id) do update set role = 'owner';
 ```
 > Verify the `firm_users` unique constraint name/columns before relying on `on conflict`; adjust to a plain `update` if the constraint differs.
+
+---
+
+## Appendix B — Call-transcript review (5-13 & 5-20): what we might be missing
+
+Reviewed both Lea Ann calls (`call_transcripts/2026-05-13-…md`, `2026-05-20-…md`) against the plan and codebase. Items are ranked by risk to tomorrow.
+
+### B.1 🔴 Non-billable / flat-rate time is not filtered (CRITICAL)
+- **Call (5-20):** *"I don't want to see anything that comes over here that says no [non-billable]."* She logs non-billable time to flat-rate/monthly + tax clients **on purpose** for rate analysis (*"I have them clock into those so I can use that later... it's marked as not billable"*). This **answers the open CLAUDE.md question** "do flat-rate clients appear in QB Time?" → **yes**, as non-billable time.
+- **Code:** `sync-timesheets/route.ts:167` hardcodes `is_billable: true`; `QbTimesheet` has no billable field; `engine.ts:28`'s filter is a no-op. Only the customer mapping gates billing.
+- **Risk:** A mis-mapped (or auto-matched) flat-rate client turns analysis time into a real hourly invoice.
+- **Action:** **TC-17** + decide capture-real-billable vs. mapping-discipline + "exclude from billing" flag. Resolve before real billing.
+
+### B.2 🟠 Duplicate client profiles must merge to one invoice
+- **Call (5-20):** Same client exists twice in QBO/QB Time; Amy and Amber clock into different profiles; today QBO tries to make two invoices and she hand-fixes it. She wants the tool to merge.
+- **Code:** Supported (many jobcodes → one `customer_id` → one aggregated line). Must be exercised + paired with the known-duplicate list.
+- **Action:** **TC-18**; obtain duplicate list (already in pre-prod checklist).
+
+### B.3 🟠 Real volume vs. 3-client prototype (scale + rate limits)
+- **Call (5-20):** ~**164–187 invoices/month**. Prototype showed 3.
+- **Risk:** "Send All" parallel burst vs. QB Time 300/5-min + QBO throttle; 150+ card render perf.
+- **Action:** scale note added to **TC-14**; may need batched/throttled bulk send with retry.
+
+### B.4 🟡 Scope expectations — payments/BillerGenie replacement is future
+- **Call (5-20):** Matt pitched replacing BillerGenie (payment portal, merchant processing, pass-through fees, ACH/CC, mark-paid sync back to QBO).
+- **Code/CLAUDE.md:** Pilot = QBO send; BillerGenie auto-syncs from QBO. `payments`/`payment_methods`/`processor_transactions`/`webhook_events` tables exist but are **not wired up**.
+- **Action:** Frame tomorrow as Phase 1 billing automation; she keeps BillerGenie. (Carry-over §6.6.)
+
+### B.5 🟡 "Smart" description was demoed; build uses a simple default
+- **Call (5-20):** Description shown as auto-derived from notes/prior invoices. She liked it but said customization isn't important.
+- **Code:** Default "Monthly Bookkeeping" + editable field; no notes/AI generation; raw notes never shown on invoice (correct per business rules).
+- **Action:** Don't over-promise AI descriptions. (Carry-over §6.7.)
+
+### B.6 🟢 Confirmations (validate during the run)
+- **Rounding** ceiling-to-0.25 confirmed with her real numbers: 11h53m→12.00, 31h34m→31.75, 3-client raw total 55h15m — **use these as the TC-10 hand-check** (same April data as the seed).
+- **Trigger/timing:** 1st of month for prior month, manual — matches "Generate Drafts" + month selector.
+- **Review gate / no auto-send:** confirmed required.
+- **Send directly from app (no QBO round-trip):** confirmed — matches the atomic create+send design.
+- **High-touch buffer:** confirmed wanted — matches `is_high_touch` + buffer (TC-11).
+- **Approvals visibility:** not needed ("I catch it") — date-range filter is fine.
+- **Amber's workflow:** she approves time weekly (1.5–2 hrs) and fine-combs line items; Lea Ann does the send. **Strongly validates the Option-2 "No-send assistant" decision** (Appendix A) — Amber preps (sync/map/review), Lea Ann sends.
