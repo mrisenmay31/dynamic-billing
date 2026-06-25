@@ -244,6 +244,32 @@ Walk these **in order** — each depends on the previous. For every case: perfor
 - **Expected:** A **single** invoice draft for that client, summing time from both jobcodes (one aggregated line item).
 - **Watch for:** Two separate drafts; backfill only updating one jobcode's entries; duplicate **QBO customer** records causing the invoice to go to the wrong one (cross-check the known-duplicate list).
 
+### TC-19 — Assistant role enforcement (Amber tier; see Appendix A)
+**Why:** Verify the No-send assistant role both in the UI and — critically — at the **server boundary** (UI hiding is not security). Implemented in commit `4644b52`: `isOwner()` in `src/lib/auth/firm.ts`; 403 guards in `src/app/api/invoice-drafts/[id]/send/route.ts` and both `…/connect` routes; UI gating via `canSend`/`canConnect` in `InvoicesClient.tsx`.
+- **Setup:** Temporarily set your CTA membership to assistant:
+  ```sql
+  update firm_users set role='assistant'
+  where firm_id='0a2a776d-27f8-494c-91a3-834d0698bee8' and user_id='<matts-user-id>';
+  ```
+  Reload the app.
+- **Do / Expected (assistant):**
+  1. **UI** — "Approve & Send Invoice" and "Send All Approved Invoices" are replaced with "Sending is restricted to the firm owner"; QBO + QB Time **Connect** buttons are hidden. ✅
+  2. **Server (the real test)** — hit the endpoints directly, bypassing the UI:
+     ```
+     curl -i -X POST https://app.clocktobill.com/api/invoice-drafts/<draft-id>/send
+     curl -i https://app.clocktobill.com/api/auth/qbo/connect
+     curl -i https://app.clocktobill.com/api/auth/qb-time/connect
+     ```
+     Each returns **403**. Confirm **no QBO invoice was created** for the send attempt.
+  3. Assistant can still **sync, map jobcodes, generate drafts, and edit** hours/description/rate (these are intentionally not gated).
+- **Do / Expected (owner):** Set role back to `'admin'` (or `'owner'`) → send + connect work again.
+  ```sql
+  update firm_users set role='admin'
+  where firm_id='0a2a776d-27f8-494c-91a3-834d0698bee8' and user_id='<matts-user-id>';
+  ```
+- **Watch for:** 403 only enforced in UI but endpoint still sends (would be a real security hole); assistant accidentally blocked from sync/generate/edit; null/blank role locking out a legit user (should default to full access).
+- **Tomorrow:** set Amber = `assistant` and Lea Ann = `owner` on P&L via Appendix A.6 after their invites.
+
 ---
 
 ## 4. Targeted edge cases & known gaps to probe
