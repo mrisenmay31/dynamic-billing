@@ -4,8 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **History lives in `CHANGELOG.md`** — per-milestone "what was built" detail and dated
 > session logs. This file is the working reference: architecture, business rules,
-> constraints, and the current file map. Status as of 2026-06-23: M1–M6 + UI polish
-> complete; **M7 (UAT with Lea Ann) is next**, gated only on the operational checklist below.
+> constraints, and the current file map. Status as of 2026-06-25: M1–M6 + UI polish +
+> role-based access (owner/assistant) complete; **M7 (UAT with Lea Ann + Amber) is next**.
+> A full production dry-run test plan exists at **`ONBOARDING-DRY-RUN-TEST-PLAN.md`** (run
+> it before/at onboarding). **#1 open correctness risk: non-billable/flat-rate time is not
+> filtered** — see Known Gaps.
 
 ## Project Overview
 
@@ -83,7 +86,9 @@ No native shared identifier between QB Time jobcodes and QBO customer IDs. The a
 - API version: `minorversion=75` minimum
 
 ### Multi-Tenancy
-No hardcoded firm ID. `src/lib/auth/firm.ts` → `getFirmContext(supabase)` returns `{ userId, firmId }` from `firm_users` per request; all firm-scoped server routes call it, and send/PATCH routes enforce tenant-scope guards. Matt's login → **CTA Integrity, LLC** (`0a2a776d-27f8-494c-91a3-834d0698bee8`); P&L (`00000000-…0001`) is the seeded pilot firm.
+No hardcoded firm ID. `src/lib/auth/firm.ts` → `getFirmContext(supabase)` returns `{ userId, firmId, role }` from `firm_users` per request; all firm-scoped server routes call it, and send/PATCH routes enforce tenant-scope guards. Matt's login → **CTA Integrity, LLC** (`0a2a776d-27f8-494c-91a3-834d0698bee8`); P&L (`00000000-…0001`) is the seeded pilot firm.
+
+**Role-based access (commit `4644b52`):** `firm_users.role` is now enforced. `isOwner(role)` (in `firm.ts`) = `role === 'owner' || 'admin'` (legacy `admin` rows keep full access; null defaults to `admin`). Server 403 guards on `invoice-drafts/[id]/send` and both `auth/{qbo,qb-time}/connect` routes block non-owners. UI hides Send + Connect for `assistant` via `canSend`/`canConnect` (role passed from `page.tsx` → `InvoicesClient`). Tier: **owner** = full incl. send + connect; **assistant** = sync/map/generate/edit but **no send, no connect**. Assign roles by SQL at invite time. (UI hiding is secondary; the 403 is the boundary.)
 
 ### Per-Tenant DB Schema (Key Tables)
 ```
@@ -112,7 +117,7 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 ## Open Questions (unresolved)
 
 - **QB Time Approvals Add-On:** Enabled on Lea Ann's account? Determines approval-date filter vs. simple date-range filter.
-- **Flat-rate clients:** Do they appear in QB Time exports? If so, system needs to skip or flag them.
+- **Flat-rate clients:** ~~Do they appear in QB Time exports?~~ **ANSWERED (5-20 call): yes** — Lea Ann logs *non-billable* time to flat-rate/monthly/tax clients on purpose (for rate analysis) and does NOT want it invoiced. See the "non-billable time not filtered" Known Gap — this is the #1 correctness risk to resolve before real billing.
 - **Multiple billing rates:** Is $125/hr universal for all hourly clients, or do some differ?
 - **QBO Item ID:** Need the exact internal ID for "Hourly Accounting services" in Lea Ann's real QBO for `ItemRef` lookup (system auto-creates if missing).
 
@@ -127,6 +132,8 @@ Full schema: `apps/web/supabase/migrations/20260525232144_remote_schema.sql`
 
 ## Known Gaps (backlog)
 
+- **🔴 Non-billable / flat-rate time is not filtered (CRITICAL, pre-pilot).** `sync-timesheets/route.ts:167` hardcodes `is_billable: true` on every entry; `QbTimesheet` carries no billable field; `engine.ts:28`'s `is_billable` filter is therefore a no-op. The *only* billing gate is the customer mapping, so a mis-mapped/auto-matched flat-rate client turns non-billable analysis time into a real hourly invoice — directly violating Lea Ann's hard requirement. Fix options (see `ONBOARDING-DRY-RUN-TEST-PLAN.md` TC-17 + Appendix C): (A) capture the real billable flag on sync if her data exposes one; (B) add a customer-level `exclude_from_billing` flag (recommended belt-and-suspenders since mapping is the gate). Resolve before connecting real billing data.
+- **Bulk send at scale** — Lea Ann sends ~164–187 invoices/month; "Send All" fires sends in parallel (`Promise.all`). A real burst may hit QB Time (300/5min) / QBO rate limits and partially fail. Likely needs concurrency-limiting + retry. (Prototype only exercised 3 clients.)
 - **Auto-create QBO customer** — if a `customers` row has no `qbo_customer_id`, send fails with a clear error. Fix: at send time, create the QBO customer from `display_name`, save the new ID back, proceed (same pattern as item auto-create). Not blocking for pilot (Lea Ann's clients exist in QBO); needed before onboarding new firms.
 - **QBO token revocation** — `src/lib/qbo/oauth.ts` has no revocation call; "disconnect" only deletes stored tokens, doesn't hit `https://developer.api.intuit.com/v2/oauth2/tokens/revoke`. Implement post-UAT (see TODO in that file).
 
@@ -165,7 +172,7 @@ src/app/api/qb-time/sync-timesheets/route.ts   — POST: pull timesheets (both e
 src/app/api/qb-time/jobcodes/route.ts          — GET: synced jobcodes + mapping status
 src/app/api/qb-time/jobcodes/assign/route.ts   — POST: find-or-create customer + map + backfill entries
 src/app/api/qbo/items/route.ts                 — GET: debug list of QBO product/service names
-src/lib/auth/firm.ts          — getFirmContext(): per-request { userId, firmId } from firm_users
+src/lib/auth/firm.ts          — getFirmContext(): per-request { userId, firmId, role } from firm_users; isOwner(role) gate
 src/lib/billing/engine.ts     — pure fn: (firmId, billingMonth) → DraftPayload[]; no DB writes
 src/lib/billing/run-status.ts — recomputeBillingRunStatus: syncs billing_runs.status from draft statuses
 src/lib/qbo/oauth.ts          — QBO OAuth helpers (auth URL, exchange, refresh)
@@ -211,8 +218,10 @@ src/middleware.ts             — auth guard; public + bypass routes; /login→/
 
 ## Key Project Files
 - `qbo-billing-automation-briefing.md` — primary design reference
+- `ONBOARDING-DRY-RUN-TEST-PLAN.md` — full production dry-run/UAT test plan (TC-1–19, CTA reset SQL, Amber role spec, transcript review, fix prompts)
 - `lea-ann-sample-data-analysis.md` — confirmed findings from sample invoices + time report
-- `call_transcripts/2026-05-13-matt-lea-ann-pl-business-services.md` — full call transcript
+- `call_transcripts/2026-05-13-matt-lea-ann-pl-business-services.md` — discovery call transcript
+- `call_transcripts/2026-05-20-matt-lea-ann-pl-business-services.md` — prototype walkthrough (billable/flat-rate, duplicate profiles, volume, payments scope)
 - `sample_data/time_reports/P&L Client Time Entires.xlsx` — April 2026 QB Time export
 - `sample_data/invoices/Invoice 5101/5138/5141.pdf` — sample invoices (Baine, Knox PT, KTA)
 
@@ -220,4 +229,5 @@ src/middleware.ts             — auth guard; public + bypass routes; /login→/
 - QB Time API: `https://rest.tsheets.com/api/v1` (docs: `tsheetsteam.github.io/api_docs/`)
 - QBO Invoice API: `https://quickbooks.api.intuit.com/v3/company/{realmId}/invoice` (sandbox: `https://sandbox-quickbooks.api.intuit.com/...`)
 - QBO OAuth: `https://appcenter.intuit.com/connect/oauth2`
-- Call transcript (Lea Ann Sanford, May 13 2026): `https://fathom.video/calls/671102793`
+- Call transcript (Lea Ann Sanford, May 13 2026 — discovery): `https://fathom.video/calls/671102793`
+- Call transcript (Lea Ann Sanford, May 20 2026 — prototype walkthrough): `https://fathom.video/calls/679614071`

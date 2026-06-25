@@ -15,7 +15,8 @@ when* and *why* — keep it out of the working reference to keep CLAUDE.md lean.
 | M5 — Review queue DB wiring | ✅ Complete | 2026-06-04 |
 | M6 — QBO invoice send | ✅ Complete | 2026-06-04 |
 | UI polish + dynamic billing run page | ✅ Complete | 2026-06-12 |
-| M7 — UAT with Lea Ann | 🔲 Next | Pending pre-production checklist |
+| Role-based access (owner/assistant) | ✅ Complete | 2026-06-25 |
+| M7 — UAT with Lea Ann + Amber | 🔲 Next | Dry-run plan ready; TC-17 billable fix outstanding |
 
 Build order / dependencies: M2a → M3 → M4 → M5 → M6 → (swap to Lea Ann's real
 credentials) → M7. M2b slots in parallel — does not block M4–M6.
@@ -175,3 +176,26 @@ Inserted a single July-2026 test entry directly into `time_entries` (Baine, 2.00
 
 ### Net result
 End-to-end pipeline (Generate Drafts → review → Approve & Send → real QBO invoice created → real email delivered → invoice viewable in QBO with a real `DocNumber` and the correct line item) is **proven on production QBO**. The remaining gate to M7 is now purely operational (see the pre-production checklist in `CLAUDE.md`).
+
+---
+
+## Session 2026-06-25 — M7 dry-run prep, role-based access, transcript review
+
+Prep session for the 2026-06-26 onboarding with **Lea Ann + Amber**. Planning/advising session; the only code shipped was the role-based access change (built in a parallel terminal session). Plan-as-deliverable lives in `ONBOARDING-DRY-RUN-TEST-PLAN.md`.
+
+### Shipped this session
+- **Role-based access control (commit `4644b52`)** — `firm_users.role` is now enforced. `getFirmContext()` returns `role`; new `isOwner(role)` (`= 'owner' || 'admin'`) in `src/lib/auth/firm.ts`. Server **403 guards** on `invoice-drafts/[id]/send` and both `auth/{qbo,qb-time}/connect` routes for non-owners (the security boundary). UI hides Send + Connect for `assistant` via `canSend`/`canConnect` (role flows `page.tsx` → `InvoicesClient`). Legacy `admin` rows + null role default to full access, so CTA/P&L are unaffected. Decision: **Amber = `assistant` (no send, no connect), Lea Ann = `owner`.** No DB migration (admin treated as owner). Diff reviewed; 403 fires before any QBO call. ⚠️ `tsc` was reported clean by the building agent but not independently re-run here.
+
+### Authored (no code) — `ONBOARDING-DRY-RUN-TEST-PLAN.md`
+Full production dry-run plan: branching/safety note, pre-flight checks, **CTA firm-scoped reset SQL** (FK-safe; keeps `firms`+`firm_users`; resets `qbo_write_enabled=true`, $125, "Monthly Bookkeeping"), **TC-1–19**, edge cases, pre-prod checklist, bug tracker, terminal prompt templates, and Appendices A (Amber role spec + invite SQL), B (transcript review), C (TC-17 billable fix prompt).
+
+### Transcript review (added `call_transcripts/2026-05-20-…md`, the prototype walkthrough)
+Reviewed both Lea Ann calls vs. plan + code. Key findings:
+- **🔴 Non-billable/flat-rate time is not filtered (CRITICAL).** `sync-timesheets/route.ts:167` hardcodes `is_billable: true`; `engine.ts:28` filter is a no-op; mapping is the only gate. Lea Ann logs non-billable analysis time to flat-rate clients on purpose and must not be billed for it. Answers the old "do flat-rate clients appear in QB Time" open question (yes). Fix = TC-17 / Appendix C (capture real flag, or add `customers.exclude_from_billing`). **Outstanding — resolve before real billing.**
+- **Duplicate client profiles** (Amy vs. Amber clock into two records for one client) must merge to one invoice — architecture supports it (many jobcodes → one customer); test = TC-18.
+- **Scale**: real volume ~164–187 invoices/month vs. 3-client prototype; parallel "Send All" may hit rate limits (added to Known Gaps).
+- **Scope expectations**: Matt pitched replacing BillerGenie (payments/merchant processing) on 5-20 — those tables exist but are unwired; pilot keeps BillerGenie. Don't imply the payment portal ships now.
+- Confirmations: rounding math matches her real numbers (11h53m→12.00, 31h34m→31.75); manual 1st-of-month trigger; review gate; send-direct; high-touch buffer; approval visibility not needed ("I catch it"). Amber's prep-vs-send division validates the No-send tier.
+
+### Next session = the dry run
+Start from `ONBOARDING-DRY-RUN-TEST-PLAN.md` §1 → run in order. Branch: `claude/cta-integrity-onboarding-test-7tazih` (do NOT merge to `main` mid-run). First real correctness gate is TC-17; hand Appendix C to the terminal session once QB Time is connected with real data.
