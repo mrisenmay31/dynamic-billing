@@ -1,0 +1,14 @@
+## 2026-06-25 — Lane A — Empty-state UX batch (TC-2)
+- Branch / worktree: claude/cta-ui-empty-states (../db-lane-a)
+- Status: DONE
+- Files changed: src/app/invoices/InvoicesClient.tsx (fixes at lines ~703–728, ~828–832, ~1273–1333, ~1554–1577, ~1784–1792, ~2097–2105, ~2220–2230, ~2801–2822, ~2855)
+- What I changed & why:
+  - **Fix 1 (IQ header + footer):** Added `runBillingMonth: string | null` prop to `InvoiceQueueView` (distinct from `activeBillingMonth`). Header subtitle now shows "No billing run yet — sync time entries, then Generate Drafts." when `runBillingMonth` is null; shows `<Month> · Billing Period` when a real run exists. Bottom action bar wrapped in `{runBillingMonth && <div>…</div>}` — hidden entirely until a run is generated. `activeBillingMonth` (fallback for dropdown/date previews) unchanged. At render site, passed `runBillingMonth={billingMonth}` (the nullable value from `currentRun?.billingMonth ?? null`).
+  - **Fix 2 (All Time Entries):** In the `filtered.length === 0` branch, added an inner check: if `timeEntries.length === 0` (genuinely empty dataset) shows "No time entries yet — connect QuickBooks Time in Settings and Sync to import your entries." without a Clear filters button; otherwise (entries exist but current filters exclude them) shows the existing "No entries match your filters" + Clear filters button.
+  - **Fix 3 (Client Rules):** Inside Per-Client Overrides `<tbody>`, added a `templates.length === 0` guard that renders a single full-width (`colSpan={5}`) row with "No clients yet — map jobcodes to customers in Client Mapping to manage per-client rules." styled to match existing table padding.
+  - **Fix 4 (Client Mapping Settings links):** Added `onNavigateToSettings: () => void` prop to `ClientMappingView`. Fixed the QBO-not-connected amber banner's `onClick={() => {}}` no-op to call `onNavigateToSettings`. Also turned the QB Time "Connect it in Settings" plain text into a `<button className="underline font-medium">Settings</button>` using the same prop. At render site passed `onNavigateToSettings={() => setActiveView("settings")}`.
+- Verification: `npx tsc --noEmit` PASS (0 errors; used main repo node_modules symlinked into worktree for the check since worktree has no independent node_modules)
+- Commit(s): TBD (committing now)
+- NOT done / out of scope: `exclude_from_billing` toggle (Known Gap in CLAUDE.md), any server-side route changes, page.tsx data-fetching changes
+- Handoff: The regression reviewer should confirm that (a) after Generate Drafts the IQ header shows a real month label and the action bar reappears, (b) with entries but active filters "No entries match your filters" still fires, (c) with entries the Client Rules table populates normally
+- Bug IDs (test plan §7): B-01, B-02, B-03, B-04
