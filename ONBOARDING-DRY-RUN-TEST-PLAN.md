@@ -346,7 +346,9 @@ Log bugs as you go; batch the non-P0s to the terminal session at the end so the 
 
 ## Appendix A — Amber role/permissions spec
 
-**Decision needed before tomorrow.** Amber (admin assistant at P&L) and Lea Ann (owner) will both be members of the P&L firm. Decide what Amber can do, then choose how much (if any) code to build for it before the meeting.
+> **DECISION (2026-06-25): Option 2 — No-send assistant.** Amber preps (sync, map, generate, review/edit); Lea Ann owns Approve & Send and integration connect/disconnect. Build spec = A.3; ready-to-run terminal prompt = A.5.
+
+**Context.** Amber (admin assistant at P&L) and Lea Ann (owner) will both be members of the P&L firm. The chosen access model and its build spec are below.
 
 ### A.1 Current reality (as built today)
 
@@ -403,4 +405,63 @@ What should Amber be able to do? Pick a target tier:
 
 No code, but **explicitly accept** that Amber can send real invoices to P&L's clients. If that's acceptable for the pilot, document it and move on — revisit role enforcement post-UAT.
 
-> **Ask Matt to pick A.2 Option 1 / 2 / 3 today.** If Option 2 or 3, hand Appendix A.3 to the terminal session now (prompt template 8.1 with this section pasted in) so the change is built and verified on the branch before tomorrow — not merged to `main` until after the dry run.
+### A.5 Terminal prompt to build Option 2 (ready to paste)
+
+```
+On branch claude/cta-integrity-onboarding-test-7tazih (apps/web, Next.js 15). Implement
+role-based access for the P&L pilot: an "assistant" role that can do everything EXCEPT
+send invoices and connect/disconnect integrations. Owner keeps full access.
+
+Background (verified):
+- firm_users.role is `text not null default 'admin'` but is read NOWHERE today.
+  getFirmContext() in src/lib/auth/firm.ts selects only firm_id. No route checks role.
+- Treat existing rows as full-access: role 'admin' and 'owner' = full; role 'assistant'
+  = restricted. No DB migration/backfill needed.
+
+Implement:
+1. src/lib/auth/firm.ts — add `role` to the FirmContext interface and select it in the
+   firm_users query alongside firm_id. Default to 'admin' if null.
+2. Add a tiny helper (same file or src/lib/auth/) e.g. `isOwner(role)` returning
+   role === 'owner' || role === 'admin'.
+3. SERVER ENFORCEMENT (the security boundary — mandatory):
+   - src/app/api/invoice-drafts/[id]/send/route.ts — if !isOwner(role), return 403 with
+     a clear JSON error BEFORE any QBO call. No invoice may be created for an assistant.
+   - src/app/api/auth/qbo/connect/route.ts and src/app/api/auth/qb-time/connect/route.ts
+     — same 403 guard for non-owners.
+4. UI (secondary, prevents confusion — NOT the security control):
+   - Pass the role from the server component src/app/invoices/page.tsx into
+     InvoicesClient.tsx as a prop (same pattern as qboConnected).
+   - In InvoicesClient.tsx, when role is assistant: hide/disable "Approve & Send Invoice"
+     and "Send All Approved Invoices", and show a short note "Sending is restricted to the
+     firm owner." Leave all review/edit/sync/generate/map controls active.
+     Also hide the QBO/QB Time "Connect" buttons for assistants.
+
+Constraints:
+- Server checks are mandatory and must not be bypassable by hiding UI only.
+- Do not break existing 'admin' users (CTA + P&L) — they must retain full access.
+- Run `npx tsc --noEmit` from apps/web before committing.
+- Commit to the branch with a clear message. DO NOT open a PR and DO NOT merge to main.
+
+Acceptance criteria:
+- Assistant can sync, map, generate, and edit drafts.
+- Assistant hitting the send endpoint (UI or direct) gets 403; no QBO invoice created.
+- Assistant hitting connect endpoints gets 403.
+- Owner/admin retains full send + connect.
+- Send buttons + Connect buttons hidden for assistant in the UI.
+```
+
+### A.6 Assigning the role at invite time (SQL)
+
+After Amber accepts her magic-link invite (which creates her auth user), set her role on the **P&L** firm:
+```sql
+-- Amber = assistant on P&L
+insert into firm_users (firm_id, user_id, role)
+values ('00000000-0000-0000-0000-000000000001', '<ambers-auth-user-id>', 'assistant')
+on conflict (firm_id, user_id) do update set role = 'assistant';
+
+-- Lea Ann = owner on P&L (admin also works; both are full-access)
+insert into firm_users (firm_id, user_id, role)
+values ('00000000-0000-0000-0000-000000000001', '<lea-anns-auth-user-id>', 'owner')
+on conflict (firm_id, user_id) do update set role = 'owner';
+```
+> Verify the `firm_users` unique constraint name/columns before relying on `on conflict`; adjust to a plain `update` if the constraint differs.
