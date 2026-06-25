@@ -325,9 +325,13 @@ Things the dry run can't fully cover but must be queued for the live session:
 
 | ID | TC | Severity | Symptom | Expected | Actual | Repro steps | Status | Handed to terminal? |
 |----|----|----------|---------|----------|--------|-------------|--------|---------------------|
-| B-01 | | | | | | | open | |
-| B-02 | | | | | | | open | |
-| B-03 | | | | | | | open | |
+| B-01 | TC-2 | P1 | Invoice Queue empty state missing header/footer scaffolding | Sensible empty state | Bare/blank region | Reset firm → open Invoice Queue | FIXED + MERGED (`74d4333`) | yes (Lane A) |
+| B-02 | TC-2 | P2 | All Time Entries empty copy unhelpful to new firm | Clear "no entries yet" guidance | Misleading copy | Reset firm → All Time Entries | FIXED + MERGED (`74d4333`) | yes (Lane A) |
+| B-03 | TC-2 | P2 | Client Rules empty table renders awkwardly | Sensible empty state | Empty table shell | Reset firm → Client Rules | FIXED + MERGED (`74d4333`) | yes (Lane A) |
+| B-04 | TC-2 | P2 | Dead Settings nav link | Link works or removed | Dead link | Reset firm → Settings nav | FIXED + MERGED (`74d4333`) | yes (Lane A) |
+| B-05 | TC-8 | P1 | Entries deleted/voided in QB Time persist in ClockToBill after re-sync | Re-sync mirrors QB Time (orphans removed) | Stale entries remained → over-billing | Sync, delete an entry in QB Time, re-sync | FIXED + MERGED (`77bdb76`) — empty-fetch + sent-invoice guards | yes (Lane B) |
+| B-06 | TC-10 | P2 | "Generate Drafts" not idempotent-with-recompute: returns existing run without recomputing after a re-sync | Regenerate reflects re-synced entries (or explicit re-generate action) | Must manually delete run+drafts before re-test | Generate, re-sync timesheets, Generate again | OPEN (backlog / decide fix) | not yet |
+| B-07 | TC-17 | P0 | Non-billable per-entry time billed on MIXED clients; `is_billable: true` hardcoded at sync (`sync-timesheets/route.ts:167`), `engine.ts` filter is a no-op. June CTA over-bill **$281.25** (Greenleaf, Ironclad, Mesa Verde). Path B (whole-customer `exclude_from_billing`) already shipped but cannot drop individual "No" entries. | No non-billable time produces an invoice line | Non-billable analysis time invoiced at $125/hr | Sync CTA June, Generate Drafts, compare to `customfields.6490032` split | **Path B FIXED + MERGED (`11cab3e`); Path A GREENLIT — IN PROGRESS** | yes (Lane B, Path A) |
 
 Severity: **P0** blocks onboarding · **P1** visible/embarrassing · **P2** polish.
 
