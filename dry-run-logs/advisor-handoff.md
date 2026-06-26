@@ -4,140 +4,139 @@
 > session reads THIS doc + the test plan + the other `dry-run-logs/*.md` to resume. Captures
 > the orchestration/decision layer not in CLAUDE.md, the test plan, or per-agent logs.
 >
-> **RESUME POINT (updated 2026-06-26):** Mid rounding/billable validation. CTA June
-> `time_entries` + `billing_run` + `invoice_drafts` are ALL CLEARED (0). **Immediate next
-> action: user resyncs June in the app, then advisor reconciles (see "IN-FLIGHT" below).**
-> Separately, **TC-17 Path A is GREENLIT but not yet implemented** (code task — spec below).
+> **RESUME POINT (updated 2026-06-26, late):** The full fix bundle is **DEPLOYED TO PROD
+> and LIVE** (`main` = integration = `494e1bd`). Path A (per-entry billable) is **verified
+> live** at the `time_entries` level. **Immediate next task: the sweep delete-test (B-05
+> live verification)** — see "IN-FLIGHT" below. After that, regenerate June drafts (they're
+> stale) and continue the remaining TCs.
 
 ## Role / working model
 - **Advisor mode:** advisor does NOT execute the dry run. Reviews context, triages, writes
   grounded fix/investigation prompts for Matt's terminal agents, regression-checks diffs,
-  performs lane→integration merges (never to `main` mid-run), and runs read-only/CTA-scoped
-  SQL via Supabase MCP to verify. Matt runs agents + pastes results back. Relay at decision
-  points only.
-- **Matt keeps:** merge authority (delegated per-merge) + lane-ownership map.
+  performs lane→integration merges, and runs read-only/CTA-scoped SQL via Supabase MCP to
+  verify. Matt runs agents + pastes results back. Relay at decision points only.
+- **Investigations → Agent 1.** Code tasks → Agent 2 (and others) by disjoint file set.
+- **Matt keeps merge + deploy authority.** NOTE: the original "never merge to main mid-run"
+  rule was **deliberately overridden** — we flipped to deploy-then-test because there are no
+  real users yet (only CTA test + P&L seed) and the high-value fixes (Path A, sweep, role)
+  can only be verified against a real deploy. Advisor may merge to `main` **only on Matt's
+  explicit per-deploy instruction** (granted twice so far).
 
 ## Environment / hard constraints
 - **Production**: Supabase `vvmfbtvxsjeyrmsqodon`, real Intuit OAuth, real invoices. Test firm
   = **CTA Integrity, LLC** `0a2a776d-27f8-494c-91a3-834d0698bee8`. Matt's user
   `29b3856e-8ce4-424b-a083-ceb14af7372d` (role `admin`).
-- **Do NOT touch P&L** `00000000-0000-0000-0000-000000000001` (3 customers, 0 prod time
-  entries — the "88 April entries" is local-seed-only).
-- **Do NOT merge to `main` mid-run.** Deliberate `integration → main` deploy AFTER the dry
-  run, BEFORE onboarding. **All merged fixes are NOT live yet** (live app deploys from `main`).
+- **Do NOT touch P&L** `00000000-0000-0000-0000-000000000001`.
 - Undo = Supabase PITR / daily backup. `QBO_ITEM_NAME` stays unset (verified).
 - Ephemeral container: commit + push or it's lost. Integration branch =
-  `claude/cta-integrity-onboarding-test-7tazih` (latest pushed; sweep merged @ 77bdb76+).
+  `claude/cta-integrity-onboarding-test-7tazih`.
+- **Vercel:** project `dynamic-billing` (`prj_LsROCSJBGI88KWV5qV6P8B0Ohkst`), team
+  `team_L59vTcDN4KmtaQIZ4dpkFuCR`. Auto-deploys prod from `main`. Verify deploys via Vercel MCP.
 
-## Where we are (TC sequence)
-- §1 pre-flight + §2 reset: DONE. TC-1/TC-2: DONE (4 empty-state bugs fixed+merged).
-- TC-3–TC-8 (connect, sync, map): DONE.
-- TC-9/TC-10 (review + Generate + rounding): DONE on initial clean synthetic data (math OK).
-- **NOW: realistic rounding + billable validation in progress** (see IN-FLIGHT). Matt keyed
-  P&L's real April data into CTA's QB Time as June entries (messy durations + multi-staff that
-  the clean synthetic data never exercised), plus 3 mixed-billable test clients.
-- Not yet: TC-11 (queue edits), TC-12–15 (send + dashboards), TC-16, TC-18, TC-19, §4.
+## DEPLOY STATE (current)
+- **`main` = integration = `494e1bd`.** Fully caught up; no pending code.
+- **Everything below is LIVE on `app.clocktobill.com`:**
+  - Empty-state batch (B-01..B-04)
+  - Path B `exclude_from_billing` column (already on prod DB) + engine skip + customers PATCH
+  - Sync reconciliation **sweep** (B-05) — code live; **delete-behavior NOT yet verified live**
+  - Path A per-entry `is_billable` from QB Time custom field (B-07) — **verified live**
+  - Role-based access / `isOwner` (assistant tier)
+  - Billable badge color (green Yes / red No) — `494e1bd`
+  - `.claude/settings.json` `$schema` fix (`0c4046b`) — was breaking Matt's terminal launch
+- **Deploy-history gotcha (resolved):** the first deploy only fast-forwarded `main` to
+  `25eec6d` (an old intermediate) because Matt's **local integration branch was stale at
+  `25eec6d`**. Caught via sync-log/`is_billable` mismatch + git ancestry; fixed by merging
+  from the **remote** ref `origin/claude/cta-integrity-onboarding-test-7tazih`. Lesson: always
+  merge to `main` from the remote integration ref, not a local checkout.
 
-## IN-FLIGHT: rounding + billable validation (resume here)
-**Goal:** validate ceiling rounding on messy data AND surface the non-billable bug live.
-**State:** CTA June `time_entries`=0, `billing_run`=0, `invoice_drafts`=0 (advisor cleared, so
-resync is an exact mirror since the sweep isn't deployed). CTA's QB Time holds the full June
-dataset: 6 clients, ~100 entries.
+## Path A verification (done, live)
+After deploy + a fresh June re-sync, `time_entries.is_billable` split is correct:
+**95 "Yes" → true, 4 "No" → false, 0 mismatches** (custom field `6490032`, CTA firm-specific).
+The 4 non-billable entries: Greenleaf 2, Ironclad 1, Mesa Verde 1.
+⚠️ **June `invoice_drafts` are STALE** — generated 21:14 under old code (all billable), never
+regenerated, so they still show the over-bill (Greenleaf 4.00/$500, Ironclad 3.25/$406.25,
+Mesa Verde 3.00/$375). B-06 idempotency means "Generate Drafts" won't recompute; must delete
+run+drafts first. After regenerate the billable-only targets are:
+- Greenleaf **3.00 / $375**, Ironclad **2.50 / $312.50**, Mesa Verde **2.50 / $312.50**
+- P&L unchanged: Baine **12.00 / $1,500**, Knox PT **12.00 / $1,500**, Knoxville Title **31.75 / $3,968.75**
+- (Baine raw is 11:52 / 42,768s, not 11:53 — 3 entries keyed as 2-decimal hours in QB Time:
+  3.83/1.47/0.13 → ±12s; net −12s; rounds to 12.00 either way. Test-data quirk, not a bug.)
 
-**Data fidelity already checked** (April xlsx vs June QB Time report): Knox PT (11:48) and
-Knoxville Title (31:34) matched exactly. Baine had ONE error — the 06/20 entry was 3:49 with a
-duplicated description; **Matt fixed it to 3:50 / "bank trans & recon"** → Baine now 11:53.
-(Minor cosmetic: Baine "phone call with tyler" dated 06/28, source is 04/29 → 06/29; doesn't
-affect total.)
+## IN-FLIGHT: NEXT TASK — sweep delete-test (B-05 live verification)
+**Goal:** prove "QB Time is the master of truth" — a deletion in QB Time propagates on re-sync.
+**Why it matters:** this is the guarantee Matt explicitly cares about; the sweep code is live
+but its delete path has never run against prod.
+**Recommended method (zero billing impact):** delete one of the **non-billable "No"** entries
+in QB Time (Greenleaf/Ironclad/Mesa Verde) — removing it doesn't change any billable total.
+**Sequence:**
+1. Note the target entry's `qb_time_entry_id` (advisor can pull it via SQL beforehand).
+2. Matt deletes that entry in CTA's QB Time.
+3. Matt clicks **Sync Now (June)**.
+4. Advisor verifies via SQL + sync log:
+   - the orphan row is **gone** from `time_entries` (CTA June count drops by 1),
+   - latest `integration_sync_logs.error_details` shows **`swept: 1`** (and `protected: 0`),
+   - no other rows disturbed.
+5. **Edge checks worth doing** (from sweep design): empty-fetch guard (a window that returns 0
+   timesheets must NOT mass-delete) and sent-invoice protection (orphan for a customer with a
+   `sent` draft is preserved + warned). The empty-fetch case is easy to reason about; the
+   sent-invoice case naturally falls out of TC-12 later.
+**If swept != 1 or the row remains:** hand to Agent 1 to investigate the sweep window/scoping.
 
-**Resume sequence:**
-1. Matt clicks **Sync Now** (defaults to current month = June). Tell advisor "synced".
-2. Advisor reconciles via SQL: per-client entry counts match the QB Time report, and the 3 P&L
-   raw totals = **Baine 11:53, Knox PT 11:48, Knoxville Title 31:34**.
-3. Matt clicks **Generate Drafts** (June run is deleted, so it computes fresh).
-4. Advisor verifies ceiling rounding on the Billing Run:
-   - Baine 11:53 → **12.00 hrs / $1,500**
-   - Knox PT 11:48 → **12.00 hrs / $1,500**
-   - Knoxville Title 31:34 → **31.75 hrs / $3,968.75**
-   (These match CLAUDE.md's confirmed hand-checks: 11h53m→12.00, 31h34m→31.75.)
-5. **Expected "wrong" result (NOT a new bug):** because Path A isn't deployed, the 3 mixed
-   test clients will over-bill (non-billable "No" entries counted). Correct billable-only
-   targets:
-   - Greenleaf: billed 4.00/$500 → should be **3.00 / $375**
-   - Ironclad: billed 3.25/$406.25 → should be **2.50 / $312.50**
-   - Mesa Verde: billed 3.00/$375 → should be **2.50 / $312.50**
-6. **Optional interim Path A test (no deploy):** simulate Path A by backfilling is_billable
-   from the custom field, then regenerate to hand-verify corrected totals:
-   `update time_entries set is_billable = (source_payload->'customfields'->>'6490032'='Yes')`
-   `where firm_id='0a2a776d-...' and started_at>='2026-06-01' and started_at<'2026-07-01';`
-   (6490032 is CTA's "Billable?" field ID — firm-specific.) Then delete June run+drafts and
-   regenerate; engine.ts's is_billable filter then yields the billable-only totals above.
+## AFTER the sweep test
+1. **Regenerate June drafts** to flow Path A (and the deletion) into billing: advisor runs the
+   CTA-scoped cleanup (`delete from invoice_drafts` then `billing_runs` for the June run,
+   firm-scoped), Matt clicks Generate Drafts, advisor confirms the billable-only targets above.
+2. Continue remaining TCs (see below).
 
-## Decisions
-- **Amber role:** Option 2 No-send assistant — IMPLEMENTED `4644b52`. Verify via TC-19; assign
-  roles tomorrow (Lea Ann=owner, Amber=assistant).
-- **TC-17 (non-billable) — Path A GREENLIT (revised by live data).** Per-entry billable lives
-  in a QB Time **custom field** (CTA's is ID `6490032`, values "Yes"/"No"), present in every
-  synced `source_payload.customfields`. Pattern is MIXED (clients with both billable +
-  non-billable entries), so Path B (whole-customer exclude_from_billing, already merged) can't
-  fix it — Path A (per-entry) is required and is the #1 pre-onboarding correctness item.
-- **Orchestration:** 3-agent model; investigations→Agent 1; parallelize across items, serialize
-  within an item; code agents by DISJOINT file set; `InvoicesClient.tsx` and
-  `sync-timesheets/route.ts` are single-writer; one task per context → log → clear → next;
-  verify behavior not just tsc; worktree isolation per lane.
+## Remaining TCs (live deploy is now the correct artifact)
+- **TC-11** queue edits (description, hours, high-touch buffer, rate override → PATCH recalcs)
+- **TC-12** Approve & Send ONE — ⚠️ real invoice. Watch: 403 (write-guard/role), 422 (no
+  email / no qbo_customer_id), **Custom transaction numbers must be OFF** (else "Invoice
+  undefined"), item auto-create. Use a CTA customer whose email you control.
+- **TC-13** idempotent re-send (no duplicate QBO invoice)
+- **TC-14** Send All (scale risk: Lea Ann does 164–187/mo; prototype = 3)
+- **TC-15** Billing Run dashboard reconciliation
+- **TC-18** duplicate-profile merge (two jobcodes → one customer → one invoice)
+- **TC-19** assistant role 403 (UI + direct `curl` to send + connect; flip CTA role then back)
+
+## Open follow-ups / backlog
+1. **exclude_from_billing UI toggle (Lane A)** — STILL NOT BUILT. Path A is the per-entry gate;
+   the toggle is belt-and-suspenders for whole-customer flat-rate exclusion. Needed before
+   onboarding so Lea Ann can flag without SQL.
+2. **B-06 regenerate idempotency** — "Generate Drafts" returns existing run without recomputing;
+   decide a real fix (explicit "regenerate" action). (`billing-runs/route.ts`.)
+3. **TC-14 bulk-send scale** — likely needs concurrency-limit + retry before real volume.
+4. **Tomorrow's onboarding:** invite Lea Ann (owner) + Amber (assistant) on P&L; set roles via
+   test-plan Appendix A.6; P&L `qbo_write_enabled=true`; P&L defaults ($125 / "Monthly
+   Bookkeeping"); confirm Custom transaction numbers OFF + customer emails in her real QBO;
+   get known-duplicate customer list.
 
 ## Lane ownership map
-- **Lane A (UI):** `InvoicesClient.tsx`, `page.tsx`.
+- **Lane A (UI):** `InvoicesClient.tsx`, `page.tsx` (single-writer).
 - **Lane B (billing backend):** `engine.ts`, `qb-time/sync-timesheets/route.ts`,
   `customers/[id]/route.ts`, `supabase/migrations/*`, `types/supabase.ts`.
-  ⚠️ Path A edits `sync-timesheets/route.ts` (which holds the merged sweep) → build on the
-  merged integration branch, not in parallel.
-- **Lane C (send/QBO — if TC-12 surfaces a bug):** `invoice-drafts/[id]/send/route.ts`,
-  `lib/qbo/*`.
-
-## Completed & merged (integration branch, tsc clean, pushed)
-- **B-01..B-04 (Lane A):** empty-state batch.
-- **TC-17 Path B (Lane B):** `exclude_from_billing` column (APPLIED TO PROD) + engine skip +
-  customers PATCH + types.
-- **B-05 sweep (Lane B):** sync deletes entries removed in QB Time (window+firm scoped;
-  empty-fetch guard; partial-fetch safe; protects sent-invoice customers). @ 77bdb76.
-
-## NEXT TASK (code) — TC-17 Path A — GREENLIT, not yet implemented
-Edits `sync-timesheets/route.ts` ON TOP of the merged sweep (new branch off integration, e.g.
-`claude/cta-billable-path-a`):
-1. Custom field ID is firm-specific — do NOT hardcode. On sync, `GET /customfields`, find the
-   field named "Billable?" (or similar), get its ID. (CTA's = 6490032; confirm name in QB Time
-   UI.)
-2. Replace hardcoded `is_billable: true` (~:167) with `customfields[billableFieldId]`:
-   `"Yes"`→true, `"No"`→false.
-3. Blank/missing guard: only explicit `"Yes"`→billable; `"No"`/blank→non-billable AND warn.
-   Confirm against Lea Ann's data tomorrow.
-4. `engine.ts:28`'s is_billable filter then excludes non-billable. Path A + Path B coexist.
-5. tsc clean; log to dry-run-logs/lane-b-path-a.md; commit; no PR/merge to main.
-
-## Open follow-ups
-1. **B-07 Path A** — GREENLIT, NEXT code task (spec above).
-2. **exclude_from_billing UI toggle (Lane A)** — UNBLOCKED; needed in pre-onboarding deploy.
-3. **B-06 regenerate idempotency** — "Generate Drafts" returns existing run without recomputing;
-   must delete run+drafts to re-test. (`billing-runs/route.ts`.)
-4. **TC-14 bulk-send scale**; **TC-18 duplicate-profile merge**.
-5. **Pre-onboarding deploy bundle** (integration→main): empty-state + Path B + sweep + Path A +
-   exclude UI toggle. Then it all goes live + becomes testable for Lea Ann.
+- **Lane C (send/QBO):** `invoice-drafts/[id]/send/route.ts`, `lib/qbo/*`.
 
 ## Useful queries (Supabase MCP, project vvmfbtvxsjeyrmsqodon)
-- **Rounding reconcile:** sum `duration_seconds` per customer for the month, compute
-  `ceil(secs/900)*0.25`, diff vs `invoice_drafts.rounded_hours`/`total_amount`.
-- **Billable split:** group entries by `source_payload->'customfields'->>'6490032'` per customer.
-- CTA June scope filter: `firm_id='0a2a776d-27f8-494c-91a3-834d0698bee8' and started_at>=
-  '2026-06-01' and started_at<'2026-07-01'`.
+- CTA June scope: `firm_id='0a2a776d-27f8-494c-91a3-834d0698bee8' and started_at>='2026-06-01'
+  and started_at<'2026-07-01'`.
+- **Billable split / Path A check:** group by `is_billable` and
+  `source_payload->'customfields'->>'6490032'`.
+- **Sweep check:** CTA June `count(*)` before/after; latest `integration_sync_logs`
+  `error_details->>'swept'`.
+- **Rounding reconcile:** `ceil(sum(duration_seconds)/900.0)*0.25` per customer vs
+  `invoice_drafts.rounded_hours`/`total_amount`.
 
 ## Bug tracker (canonical = §7 of test plan)
-- B-01..B-05 — FIXED + MERGED.
+- B-01..B-05 — FIXED + MERGED + **DEPLOYED**.
+- B-05 sweep — deployed; **delete-behavior live-verification = NEXT TASK**.
 - B-06 regenerate idempotency — OPEN.
-- B-07 TC-17 Path A — GREENLIT, NEXT code task.
+- B-07 Path A — FIXED + DEPLOYED + **verified live** (time_entries level; draft-level pending
+  the post-sweep regenerate).
 
 ## How to resume the advisor
 Fresh advisor auto-loads CLAUDE.md. Read this doc + ONBOARDING-DRY-RUN-TEST-PLAN.md (§7 +
-Appendices A/C) + dry-run-logs/*.md. Resume advise-only. **Immediate action: ask Matt to
-confirm the June resync is done, then run the reconciliation (IN-FLIGHT step 2).** Path A is
-the standing next code task.
+Appendices A/C) + dry-run-logs/*.md. Resume advise-only. **Immediate action: run the sweep
+delete-test (IN-FLIGHT above)** — pull the target "No" entry's `qb_time_entry_id`, have Matt
+delete it in QB Time + Sync Now, then verify the orphan is swept (`swept:1`). Then regenerate
+June drafts and continue the remaining TCs.
