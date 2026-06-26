@@ -16,6 +16,7 @@ interface QbTimesheet {
   on_the_clock: boolean
   notes: string
   type: string
+  customfields?: Record<string, string>
 }
 
 interface QbUser {
@@ -39,6 +40,32 @@ interface TimesheetPage {
     jobcodes?: Record<string, QbJobcode>
   }
   more: boolean
+}
+
+// Looks up the QB Time custom field whose name contains "billable" (case-insensitive)
+// and returns its ID string. Returns null on any failure so callers can fall back safely.
+async function fetchBillableFieldId(token: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${QB_TIME_BASE}/customfields`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      console.warn(`[sync-timesheets] GET /customfields failed ${res.status}: ${text} — falling back to is_billable=true for all entries`)
+      return null
+    }
+    const data = await res.json() as { results?: { customfields?: Record<string, { id: number; name: string }> } }
+    const fields = Object.values(data.results?.customfields ?? {})
+    const match = fields.find(f => f.name.toLowerCase().includes('billable'))
+    if (!match) {
+      console.warn('[sync-timesheets] No "Billable?" custom field found for this firm — falling back to is_billable=true for all entries (Path B exclude_from_billing is the only gate)')
+      return null
+    }
+    return String(match.id)
+  } catch (err) {
+    console.warn('[sync-timesheets] fetchBillableFieldId threw unexpectedly — falling back to is_billable=true for all entries:', err)
+    return null
+  }
 }
 
 async function fetchTimesheets(
@@ -121,6 +148,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   try {
     const token = await getValidQbTimeToken(firmId)
+
+    // Look up the firm's "Billable?" custom field ID once per sync. null = field not found
+    // or lookup failed; in that case fall back to is_billable=true (today's behavior) so a
+    // firm without this custom field never has its billing voided.
+    const billableFieldId = await fetchBillableFieldId(token)
+
     const { timesheets, users, jobcodes } = await fetchTimesheets(token, start_date, end_date)
 
     // Load customer mappings for jobcode → customer_id lookup
@@ -152,6 +185,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           ? `${staffUser.first_name} ${staffUser.last_name}`.trim()
           : null
 
+        // Derive is_billable from the per-entry custom field when the field exists.
+        // Fall back to true when the field was not found or lookup failed (safe default
+        // so firms without this custom field keep billing normally).
+        let isBillable: boolean
+        if (billableFieldId === null) {
+          isBillable = true
+        } else {
+          const rawValue = ts.customfields?.[billableFieldId]
+          if (rawValue === undefined || rawValue === '') {
+            // Field exists for this firm but entry has no value — treat as non-billable
+            // per Lea Ann's rule ("never invoice non-billable"); warn for human review.
+            console.warn(`[sync-timesheets] Entry ${ts.id} has no value for billable field ${billableFieldId} — setting is_billable=false`)
+            isBillable = false
+          } else {
+            isBillable = rawValue.toLowerCase() === 'yes'
+          }
+        }
+
         const { error } = await adminClient
           .from('time_entries')
           .upsert(
@@ -164,7 +215,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               staff_name: staffName,
               started_at: startedAt,
               duration_seconds: ts.duration,
-              is_billable: true,
+              is_billable: isBillable,
               notes: ts.notes || null,
               source_payload: ts as unknown as import('@/types/supabase').Json,
               imported_at: new Date().toISOString(),
