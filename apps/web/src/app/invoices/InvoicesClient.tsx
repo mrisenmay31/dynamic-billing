@@ -1621,7 +1621,9 @@ function AllTimeEntriesView({ timeEntries, onSyncNow, qbTimeConnected }: {
                   <td className="py-2.5 px-3">
                     <span
                       className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium"
-                      style={{ backgroundColor: "#D8F3DC", color: "#2D6A4F" }}
+                      style={entry.billable === "Yes"
+                        ? { backgroundColor: "#D8F3DC", color: "#2D6A4F" }
+                        : { backgroundColor: "#F3D8D8", color: "#6A2D2D" }}
                     >
                       {entry.billable}
                     </span>
