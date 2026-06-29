@@ -117,7 +117,8 @@ export default async function InvoicesPage(
   const templates: InvoicesClientProps['templates'] = (drafts ?? []).map((draft) => {
     const customer = draft.customers as { id: string; display_name: string; invoice_description_override: string | null; is_high_touch: boolean; hourly_rate_override: number | null }
     const customerEntries = (entries ?? []).filter((e) => e.customer_id === draft.customer_id)
-    const rawMinutes = Math.round(customerEntries.reduce((sum, e) => sum + e.duration_seconds, 0) / 60)
+    const billableEntries = customerEntries.filter((e) => e.is_billable === true)
+    const rawMinutes = Math.round(billableEntries.reduce((sum, e) => sum + e.duration_seconds, 0) / 60)
 
     return {
       id: draft.customer_id,
@@ -132,12 +133,13 @@ export default async function InvoicesPage(
         staff: e.staff_name ?? '',
         note: e.notes ?? '',
         duration: secondsToDuration(e.duration_seconds),
+        billable: e.is_billable,
       })),
     }
   })
 
   const allEntries: InvoicesClientProps['allEntries'] = templates.flatMap((t) =>
-    t.entries.map((e) => ({
+    t.entries.filter((e) => e.billable !== false).map((e) => ({
       client: t.client,
       date: `${e.date}/${workYear}`,
       employee: e.staff,
