@@ -29,6 +29,7 @@ interface TimeEntry {
   staff: string;
   note: string;
   duration: string;
+  billable?: boolean;
 }
 
 interface InvoiceTemplate {
@@ -1040,14 +1041,22 @@ function InvoiceQueueView({
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-50">
-                                {template.entries.map((entry, i) => (
-                                  <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                                    <td className="px-3 py-2 font-mono text-gray-500">{entry.date}</td>
-                                    <td className="px-3 py-2 text-gray-700">{entry.staff}</td>
-                                    <td className="px-3 py-2 text-gray-500">{entry.note}</td>
-                                    <td className="px-3 py-2 text-right font-mono text-gray-500">{entry.duration}</td>
-                                  </tr>
-                                ))}
+                                {template.entries.map((entry, i) => {
+                                  const nonBillable = entry.billable === false;
+                                  return (
+                                    <tr key={i} className={`hover:bg-gray-50/50 transition-colors${nonBillable ? " opacity-50" : ""}`}>
+                                      <td className="px-3 py-2 font-mono text-gray-500">{entry.date}</td>
+                                      <td className="px-3 py-2 text-gray-700">{entry.staff}</td>
+                                      <td className="px-3 py-2 text-gray-500">
+                                        {entry.note}
+                                        {nonBillable && (
+                                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: "#F3D8D8", color: "#6A2D2D" }}>Non-billable — excluded</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-right font-mono text-gray-500">{entry.duration}</td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
