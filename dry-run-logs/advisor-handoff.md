@@ -4,13 +4,35 @@
 > session reads THIS doc + the test plan + the other `dry-run-logs/*.md` to resume. Captures
 > the orchestration/decision layer not in CLAUDE.md, the test plan, or per-agent logs.
 >
-> **RESUME POINT (updated 2026-06-29):** `main` = integration = `20d526e` (B-08 over-billing
-> UI fix included; prod deploy was BUILDING as of this write — confirm READY before testing).
-> B-05 sweep delete-test **PASSED live** (deleted 4 in QB Time → swept 4, protected 0). Path A
-> verified end-to-end at the data level. **Immediate next: once the B-08 deploy is READY,
-> reload the Invoice Queue and confirm Greenleaf = 3.00/$375 with the non-billable entry
-> greyed + "Non-billable — excluded" (no regenerate needed — the stored draft is already
-> 3.00/$375). Then proceed to TC-11 → TC-12 (real send).**
+> **RESUME POINT (updated 2026-06-29, after P&L onboarding call):** B-08 over-billing fix
+> DEPLOYED + **verified live** (Greenleaf 3.00/$375, non-billable present-but-excluded). B-05
+> sweep + Path A verified live. **P&L (Lea Ann) is now ONBOARDED LIVE** — logged in, QBO + QB
+> Time connected, ~1,115 June entries synced; Path A resolved her billable field (`1701272`).
+> **Immediate next = the P&L first-billing validation (she bills July 1).** Two open data
+> questions block accurate billing — see "P&L LIVE ONBOARDING" below. CTA dry-run TC-11→TC-19
+> remain but are secondary to the live P&L run.
+
+## P&L LIVE ONBOARDING (call 2026-06-29 — transcript: call_transcripts/2026-06-29-…md)
+**Done:** Lea Ann logged in (temp pw `password123`, told to reset); QBO (realm `9130349883156876`)
++ QB Time connected; ~1,115 June entries synced (06-01→06-29). Path A resolved her billable
+custom field **`1701272`** (Yes→billable 580; No 431 + blank 104 → non-billable 535 — exact
+match). She bills **July 1** for June. **Amber login deferred** (break-glass backup, not billing
+prep — may want OWNER not assistant when created).
+
+**🔴 Open data questions (block accurate first billing — drafted in dry-run-logs/lea-ann-followup-email.md):**
+1. **Multiple rates** — rate custom field `1933334` shows **$125 / $100 / $75**. App bills flat
+   $125 (firm default). Need per-client rate overrides for non-$125 clients. NOT resolved on the
+   call. If a single client has mixed per-entry rates → feature gap (app is one rate per customer).
+2. **Blank billable (104 entries)** — Path A treats blank as non-billable. Confirm her convention
+   (blank = bill or not?). Risk of under-billing.
+
+**Validation plan (before any send):** she finishes mapping (only ~4/1,115 mapped so far) +
+approves all June → sends full June QB Time report → advisor reconciles per-client (billable-only
+totals, billable-flag match, **rate handling per client**, mapping completeness). "QB Time is the
+standard of truth" — our sweep enforces it.
+
+**Smaller items:** mapping dropdown was clunky on the call (needed a re-sync to populate) → polish
+bug. Confirm she resets the temp password / uses magic link.
 
 ## Role / working model
 - **Advisor mode:** advisor does NOT execute the dry run. Reviews context, triages, writes

@@ -6,6 +6,20 @@ ready to **Generate Drafts on July 1 for June work**.
 Firm: P&L Business Services `00000000-0000-0000-0000-000000000001`. Date: 2026-06-29.
 
 ---
+## ✅ POST-CALL STATUS (2026-06-29 — call done)
+- ✅ A — firm defaults set · ✅ B — account created + owner · ✅ Login · ✅ QBO connected
+  (realm `9130349883156876`) · ✅ QB Time connected · ✅ ~1,115 June entries synced ·
+  ✅ Path A resolved her billable field `1701272`.
+- ⏳ Mapping — Lea Ann doing it herself (~4/1,115 mapped so far). Nothing bills until mapped.
+- ⏸ Amber login — **deferred** by Lea Ann (break-glass backup; revisit role = owner vs assistant).
+- 🔴 **Open before July 1 billing (see follow-up email draft):**
+  1. Multiple rates ($125/$100/$75, field `1933334`) → need per-client rate overrides.
+  2. Blank billable (104 entries) → confirm convention (currently treated non-billable).
+- ⏭ Next: she maps + approves June → sends full June QB Time report → advisor reconciles
+  per-client before any send. She bills **July 1**.
+---
+
+---
 
 ## A. Before/at the call — Matt, via SQL (2 min)
 - [ ] Set P&L firm defaults:
