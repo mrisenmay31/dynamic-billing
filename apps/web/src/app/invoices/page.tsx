@@ -4,7 +4,17 @@ import { getQboConnectionStatus } from '@/lib/qbo/connection'
 import { getQbTimeConnectionStatus } from '@/lib/qb-time/auth'
 import InvoicesClient from './InvoicesClient'
 import type { InvoicesClientProps } from './InvoicesClient'
-import { adminClient } from '@/lib/supabase/admin'
+import { getFirmContext } from '@/lib/auth/firm'
+
+// Lane B (super-admin backend) extends FirmContext with these fields.
+// Until that merge, they default to undefined → treated as false.
+type FirmContextExtended = {
+  userId: string
+  firmId: string
+  role: string
+  isSuperAdmin?: boolean
+  isImpersonating?: boolean
+}
 
 const DEFAULT_RATE = 125
 
@@ -47,19 +57,20 @@ export default async function InvoicesPage(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Resolve the firm for the logged-in user (multi-tenant). A logged-in user
-  // with no firm membership is a misconfiguration, not an auth failure — surface
-  // it rather than redirecting to /login (which would loop against middleware).
-  const { data: firmUser } = await adminClient
-    .from('firm_users')
-    .select('firm_id, role')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  if (!firmUser) {
+  // Resolve the firm for the logged-in user. getFirmContext is the single source
+  // of truth; Lane B adds isSuperAdmin + isImpersonating to the return value.
+  const ctx = await getFirmContext(supabase) as FirmContextExtended | null
+  if (!ctx) {
     throw new Error('Your account is not linked to a firm. Contact support@ctaintegrity.com.')
   }
-  const firmId = firmUser.firm_id
-  const role: string = firmUser.role ?? 'admin'
+  const { firmId, role } = ctx
+  const isSuperAdmin = ctx.isSuperAdmin ?? false
+  const isImpersonating = ctx.isImpersonating ?? false
+
+  // Super-admins get the full firm list for the switcher dropdown.
+  const allFirms: { id: string; name: string }[] = isSuperAdmin
+    ? (await supabase.from('firms').select('id, name').order('name').then(r => r.data ?? []))
+    : []
 
   const { data: firm } = await supabase
     .from('firms')
@@ -217,6 +228,10 @@ export default async function InvoicesPage(
         displayName: c.display_name,
         qboCustomerId: c.qbo_customer_id ?? null,
       }))}
+      isSuperAdmin={isSuperAdmin}
+      isImpersonating={isImpersonating}
+      currentFirmId={firmId}
+      firms={allFirms}
     />
   )
 }
