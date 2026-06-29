@@ -17,10 +17,17 @@ export async function POST(
   const supabase = await createClient()
   const ctx = await getFirmContext(supabase)
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { userId, firmId, role } = ctx
+  const { userId, firmId, role, isImpersonating } = ctx
 
   if (!isOwner(role)) {
     return NextResponse.json({ error: 'Sending invoices is restricted to firm owners.' }, { status: 403 })
+  }
+
+  if (isImpersonating) {
+    return NextResponse.json(
+      { error: 'Sending is disabled while viewing another firm.' },
+      { status: 403 }
+    )
   }
 
   const { id } = await params
