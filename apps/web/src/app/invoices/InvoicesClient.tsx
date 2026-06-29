@@ -237,6 +237,10 @@ export interface InvoicesClientProps {
   currentRun: { billingMonth: string; status: string } | null;
   availableRuns: { billingMonth: string; status: string }[];
   defaultGenerateMonth: string;
+  isSuperAdmin: boolean;
+  isImpersonating: boolean;
+  currentFirmId: string;
+  firms: { id: string; name: string }[];
 }
 
 // Kept for reference during type-checking; real data comes from props.
@@ -707,6 +711,7 @@ function InvoiceQueueView({
   onGenerateMonthChange,
   generating,
   canSend,
+  isImpersonating,
 }: {
   sharedHighTouch: Record<string, boolean>;
   setHighTouch: (id: string, val: boolean) => void;
@@ -727,6 +732,7 @@ function InvoiceQueueView({
   onGenerateMonthChange: (v: string) => void;
   generating: boolean;
   canSend: boolean;
+  isImpersonating: boolean;
 }) {
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [sendingAll, setSendingAll] = useState(false);
@@ -1263,7 +1269,11 @@ function InvoiceQueueView({
                             )}
                           </button>
                         ) : (
-                          <p className="text-xs text-gray-400 italic">Sending is restricted to the firm owner.</p>
+                          <p className="text-xs text-gray-400 italic">
+                            {isImpersonating
+                              ? 'Sending is disabled while viewing another firm.'
+                              : 'Sending is restricted to the firm owner.'}
+                          </p>
                         )}
                       </div>
 
@@ -1324,7 +1334,11 @@ function InvoiceQueueView({
               )}
             </button>
           ) : (
-            <p className="text-xs text-gray-400 italic">Sending is restricted to the firm owner.</p>
+            <p className="text-xs text-gray-400 italic">
+              {isImpersonating
+                ? 'Sending is disabled while viewing another firm.'
+                : 'Sending is restricted to the firm owner.'}
+            </p>
           )}
         </div>
       </div>}
@@ -2645,10 +2659,19 @@ function PlaceholderView({ title }: { title: string }) {
 }
 
 /* ─── Main page component ────────────────────────────────────── */
-export default function InvoicesClient({ templates, allEntries, timeEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, role, currentRun, availableRuns, defaultGenerateMonth }: InvoicesClientProps) {
-  const canSend = role === 'owner' || role === 'admin'
+export default function InvoicesClient({ templates, allEntries, timeEntries, defaultRate, qboConnected, qbTimeConnected, qbTimeConnectedAt, customers, firmName, role, currentRun, availableRuns, defaultGenerateMonth, isSuperAdmin, isImpersonating, currentFirmId, firms }: InvoicesClientProps) {
+  const canSend = !isImpersonating && (role === 'owner' || role === 'admin')
   const canConnect = role === 'owner' || role === 'admin'
   const router = useRouter();
+
+  async function switchFirm(firmId: string | null) {
+    await fetch('/api/admin/switch-firm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firmId }),
+    })
+    window.location.reload()
+  }
   const billingMonth = currentRun?.billingMonth ?? null;
   const [activeView, setActiveView] = useState<NavView>("billing-run");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -2753,7 +2776,23 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
   const activeBillingMonth = billingMonth ?? defaultGenerateMonth;
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+      {/* Impersonation banner — shown whenever a super-admin is viewing another firm */}
+      {isImpersonating && (
+        <div className="shrink-0 flex items-center justify-between gap-4 px-4 py-2.5 text-sm text-white" style={{ backgroundColor: '#92400e' }}>
+          <span>
+            <strong>Viewing as {firmName}</strong> — you can review and edit, but sending is disabled.
+          </span>
+          <button
+            onClick={() => switchFirm(null)}
+            className="underline underline-offset-2 font-medium whitespace-nowrap hover:no-underline"
+          >
+            Return to my firm
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-1 min-h-0 overflow-hidden">
       {/* Toasts (lifted to parent so both BillingRunDashboard and InvoiceQueueView can use them) */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
@@ -2785,7 +2824,31 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
         style={{ backgroundColor: "#2D6A4F" }}
       >
         <div className="px-5 py-5 border-b flex items-center justify-between" style={{ borderColor: "rgba(216,243,220,0.2)" }}>
-          <p className="font-display text-white text-base leading-snug">{firmName}</p>
+          {isSuperAdmin ? (
+            <div className="relative flex-1 mr-2">
+              <select
+                value={currentFirmId}
+                onChange={(e) => {
+                  const val = e.target.value
+                  switchFirm(val === '__return__' ? null : val)
+                }}
+                className="font-display text-white text-sm leading-snug bg-transparent border border-white/20 rounded-lg pl-2 pr-6 py-1 appearance-none w-full cursor-pointer focus:outline-none focus:border-white/50"
+                style={{ color: 'white' }}
+              >
+                {firms.map((f) => (
+                  <option key={f.id} value={f.id} style={{ color: '#1a1a1a' }}>
+                    {f.name}
+                  </option>
+                ))}
+                {isImpersonating && (
+                  <option value="__return__" style={{ color: '#1a1a1a' }}>— Return to my firm</option>
+                )}
+              </select>
+              <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'rgba(255,255,255,0.7)' }} />
+            </div>
+          ) : (
+            <p className="font-display text-white text-base leading-snug">{firmName}</p>
+          )}
           <button
             onClick={() => setSidebarOpen(false)}
             className="md:hidden text-white/80 hover:text-white p-2 -mr-2"
@@ -2849,6 +2912,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             onGenerateMonthChange={setGenerateMonth}
             generating={generating}
             canSend={canSend}
+            isImpersonating={isImpersonating}
           />
         )}
         {activeView === "billing-run" && (
@@ -2895,6 +2959,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
             canConnect={canConnect}
           />
         )}
+      </div>
       </div>
     </div>
   );
