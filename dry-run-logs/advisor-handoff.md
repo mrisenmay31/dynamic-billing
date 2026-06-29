@@ -4,11 +4,13 @@
 > session reads THIS doc + the test plan + the other `dry-run-logs/*.md` to resume. Captures
 > the orchestration/decision layer not in CLAUDE.md, the test plan, or per-agent logs.
 >
-> **RESUME POINT (updated 2026-06-26, late):** The full fix bundle is **DEPLOYED TO PROD
-> and LIVE** (`main` = integration = `494e1bd`). Path A (per-entry billable) is **verified
-> live** at the `time_entries` level. **Immediate next task: the sweep delete-test (B-05
-> live verification)** — see "IN-FLIGHT" below. After that, regenerate June drafts (they're
-> stale) and continue the remaining TCs.
+> **RESUME POINT (updated 2026-06-29):** `main` = integration = `20d526e` (B-08 over-billing
+> UI fix included; prod deploy was BUILDING as of this write — confirm READY before testing).
+> B-05 sweep delete-test **PASSED live** (deleted 4 in QB Time → swept 4, protected 0). Path A
+> verified end-to-end at the data level. **Immediate next: once the B-08 deploy is READY,
+> reload the Invoice Queue and confirm Greenleaf = 3.00/$375 with the non-billable entry
+> greyed + "Non-billable — excluded" (no regenerate needed — the stored draft is already
+> 3.00/$375). Then proceed to TC-11 → TC-12 (real send).**
 
 ## Role / working model
 - **Advisor mode:** advisor does NOT execute the dry run. Reviews context, triages, writes
@@ -34,15 +36,20 @@
   `team_L59vTcDN4KmtaQIZ4dpkFuCR`. Auto-deploys prod from `main`. Verify deploys via Vercel MCP.
 
 ## DEPLOY STATE (current)
-- **`main` = integration = `494e1bd`.** Fully caught up; no pending code.
+- **`main` = integration = `20d526e`.** Fully caught up; no pending code.
 - **Everything below is LIVE on `app.clocktobill.com`:**
   - Empty-state batch (B-01..B-04)
   - Path B `exclude_from_billing` column (already on prod DB) + engine skip + customers PATCH
-  - Sync reconciliation **sweep** (B-05) — code live; **delete-behavior NOT yet verified live**
+  - Sync reconciliation **sweep** (B-05) — **VERIFIED live** (deleted 4 in QB Time → swept 4, protected 0)
   - Path A per-entry `is_billable` from QB Time custom field (B-07) — **verified live**
   - Role-based access / `isOwner` (assistant tier)
   - Billable badge color (green Yes / red No) — `494e1bd`
   - `.claude/settings.json` `$schema` fix (`0c4046b`) — was breaking Matt's terminal launch
+  - **B-08 (P0): exclude non-billable from UI billed total + send body** — `20d526e`. page.tsx
+    `rawMinutes` now billable-only; non-billable rows shown greyed + badged; allEntries (dashboard)
+    billable-only. The UI was showing Greenleaf 4.00/$500 (incl. a non-billable hr) and would
+    SEND that, though the engine draft was correctly 3.00/$375. Agent-1 audit confirmed page.tsx:120
+    is the necessary+sufficient send-path root fix.
 - **Deploy-history gotcha (resolved):** the first deploy only fast-forwarded `main` to
   `25eec6d` (an old intermediate) because Matt's **local integration branch was stale at
   `25eec6d`**. Caught via sync-log/`is_billable` mismatch + git ancestry; fixed by merging
@@ -129,14 +136,17 @@ in QB Time (Greenleaf/Ironclad/Mesa Verde) — removing it doesn't change any bi
 
 ## Bug tracker (canonical = §7 of test plan)
 - B-01..B-05 — FIXED + MERGED + **DEPLOYED**.
-- B-05 sweep — deployed; **delete-behavior live-verification = NEXT TASK**.
-- B-06 regenerate idempotency — OPEN.
-- B-07 Path A — FIXED + DEPLOYED + **verified live** (time_entries level; draft-level pending
-  the post-sweep regenerate).
+- B-05 sweep — **delete-behavior VERIFIED live** (deleted 4 in QB Time → swept 4, protected 0). Done.
+- B-06 regenerate idempotency — OPEN (backlog; workaround = advisor CTA-scoped run+draft delete).
+- B-07 Path A — FIXED + DEPLOYED + **verified live end-to-end** (data + draft: Greenleaf
+  non-billable hr present-but-excluded → engine draft 3.00/$375).
+- B-08 over-billing UI/send — FIXED + DEPLOYED (`20d526e`). UI billed total + send body now
+  exclude non-billable; pending live re-verify after the B-08 deploy goes READY.
 
 ## How to resume the advisor
 Fresh advisor auto-loads CLAUDE.md. Read this doc + ONBOARDING-DRY-RUN-TEST-PLAN.md (§7 +
-Appendices A/C) + dry-run-logs/*.md. Resume advise-only. **Immediate action: run the sweep
-delete-test (IN-FLIGHT above)** — pull the target "No" entry's `qb_time_entry_id`, have Matt
-delete it in QB Time + Sync Now, then verify the orphan is swept (`swept:1`). Then regenerate
-June drafts and continue the remaining TCs.
+Appendices A/C) + dry-run-logs/*.md. Resume advise-only. **Immediate action: confirm the B-08
+prod deploy (`20d526e`) is READY, then re-verify Greenleaf = 3.00/$375 in the live Invoice
+Queue (non-billable entry greyed + badged, no regenerate needed). Then proceed to TC-11 →
+TC-12 (real send) → TC-13/14/15/18/19.** B-08 was the last known correctness blocker before
+real send.
