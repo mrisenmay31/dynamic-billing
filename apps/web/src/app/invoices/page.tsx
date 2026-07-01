@@ -139,6 +139,7 @@ export default async function InvoicesPage(
       rawMinutes,
       defaultDescription: draft.description ?? customer.invoice_description_override ?? 'Monthly Bookkeeping',
       sent: draft.status === 'sent',
+      rate: draft.hourly_rate,
       entries: customerEntries.map((e) => ({
         date: formatEntryDate(e.started_at),
         staff: e.staff_name ?? '',
@@ -157,9 +158,9 @@ export default async function InvoicesPage(
       productService: 'Hourly Accounting services',
       description: e.note,
       duration: e.duration,
-      rate: defaultRate,
+      rate: t.rate ?? defaultRate,
       billable: 'Yes',
-      amount: durationToAmount(e.duration, defaultRate),
+      amount: durationToAmount(e.duration, t.rate ?? defaultRate),
     }))
   )
 

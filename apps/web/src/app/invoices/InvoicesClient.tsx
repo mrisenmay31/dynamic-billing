@@ -41,6 +41,9 @@ interface InvoiceTemplate {
   rawMinutes: number;
   defaultDescription: string;
   sent: boolean;
+  // Rate actually billed for this draft (invoice_drafts.hourly_rate) — the frozen,
+  // per-client rate at draft-generation time. Never the firm default.
+  rate?: number;
   entries: TimeEntry[];
 }
 
@@ -2693,7 +2696,7 @@ export default function InvoicesClient({ templates, allEntries, timeEntries, def
   );
   const [firmDefaultRate, setFirmDefaultRate] = useState<number>(defaultRate);
   const [sharedClientRates, setSharedClientRates] = useState<Record<string, number>>(
-    Object.fromEntries(templates.map((t) => [t.id, defaultRate]))
+    Object.fromEntries(templates.map((t) => [t.id, t.rate ?? defaultRate]))
   );
 
   async function handleSyncNow() {
