@@ -897,7 +897,7 @@ function InvoiceQueueView({
             const manualAdj = parseFloat((state.hours - roundedHours).toFixed(2));
             const finalQty = state.hours;
             const amount = finalQty * state.rate;
-            const rawAmount = (template.rawMinutes / 60) * firmDefaultRate;
+            const rawAmount = (template.rawMinutes / 60) * state.rate;
             const isHighTouch = sharedHighTouch[template.id];
             const description = sharedDescriptions[template.id];
 
