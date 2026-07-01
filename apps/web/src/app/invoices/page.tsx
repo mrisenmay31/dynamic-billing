@@ -5,6 +5,7 @@ import { getQbTimeConnectionStatus } from '@/lib/qb-time/auth'
 import InvoicesClient from './InvoicesClient'
 import type { InvoicesClientProps } from './InvoicesClient'
 import { getFirmContext } from '@/lib/auth/firm'
+import { paginateQuery } from '@/lib/supabase/paginate'
 
 // Lane B (super-admin backend) extends FirmContext with these fields.
 // Until that merge, they default to undefined → treated as false.
@@ -114,13 +115,16 @@ export default async function InvoicesPage(
     : null
 
   const { data: entries } = customerIds.length > 0 && bm && nextMonth
-    ? await supabase
-        .from('time_entries')
-        .select('*')
-        .in('customer_id', customerIds)
-        .gte('started_at', bm)
-        .lt('started_at', nextMonth)
-        .order('started_at', { ascending: true })
+    ? await paginateQuery((from, to) =>
+        supabase
+          .from('time_entries')
+          .select('*')
+          .in('customer_id', customerIds)
+          .gte('started_at', bm)
+          .lt('started_at', nextMonth)
+          .order('started_at', { ascending: true })
+          .range(from, to)
+      )
     : { data: [] }
 
   const workYear = bm?.slice(0, 4) ?? ''
@@ -181,11 +185,14 @@ export default async function InvoicesPage(
   // synced QB Time entry shows up (including unmapped ones) across all months.
   const customerNameById = new Map((customers ?? []).map((c) => [c.id, c.display_name]))
 
-  const { data: rawTimeEntries } = await supabase
-    .from('time_entries')
-    .select('started_at, staff_name, notes, duration_seconds, is_billable, qb_time_jobcode_name, customer_id')
-    .eq('firm_id', firmId)
-    .order('started_at', { ascending: true })
+  const { data: rawTimeEntries } = await paginateQuery((from, to) =>
+    supabase
+      .from('time_entries')
+      .select('started_at, staff_name, notes, duration_seconds, is_billable, qb_time_jobcode_name, customer_id')
+      .eq('firm_id', firmId)
+      .order('started_at', { ascending: true })
+      .range(from, to)
+  )
 
   const timeEntries: InvoicesClientProps['timeEntries'] = (rawTimeEntries ?? []).map((e) => {
     const d = new Date(e.started_at)

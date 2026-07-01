@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/supabase'
+import { paginateQuery } from '@/lib/supabase/paginate'
 
 export interface DraftPayload {
   customerId: string
@@ -21,14 +22,18 @@ export async function computeBillingDrafts(
   const [year, month] = billingMonth.split('-').map(Number)
   const nextMonth = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`
 
-  const { data: entries, error: entriesError } = await supabase
-    .from('time_entries')
-    .select('customer_id, duration_seconds')
-    .eq('firm_id', firmId)
-    .eq('is_billable', true)
-    .not('customer_id', 'is', null)
-    .gte('started_at', monthStart)
-    .lt('started_at', nextMonth)
+  const { data: entries, error: entriesError } = await paginateQuery((from, to) =>
+    supabase
+      .from('time_entries')
+      .select('customer_id, duration_seconds')
+      .eq('firm_id', firmId)
+      .eq('is_billable', true)
+      .not('customer_id', 'is', null)
+      .gte('started_at', monthStart)
+      .lt('started_at', nextMonth)
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
 
   if (entriesError) throw new Error(`Failed to fetch time entries: ${entriesError.message}`)
   if (!entries || entries.length === 0) return []
