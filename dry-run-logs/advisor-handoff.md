@@ -4,13 +4,87 @@
 > ONBOARDING-DRY-RUN-TEST-PLAN.md + dry-run-logs/*.md to resume. Captures the orchestration /
 > decision layer not in CLAUDE.md.
 >
-> **RESUME POINT (updated 2026-06-29, after super-admin ship):** `main` = integration =
-> `7304ff6`, fully deployed to prod. Everything from the dry run is LIVE (Path A, sweep, B-08
-> over-billing fix, role gating) **plus the new super-admin firm-switcher**. **P&L (Lea Ann)
-> onboarded live** and bills **July 1**. **Immediate next = P&L first-billing validation:**
-> waiting on Lea Ann's reply to the follow-up email (rates + blank-billable), then she sends
-> her full June QB Time report → advisor reconciles per-client before she sends invoices.
-> Next code work branches off **`7304ff6`** (the current integration tip).
+> **RESUME POINT (updated 2026-07-01, AP-03 SHIPPED — ready for Lea Ann to send):** `main` =
+> integration = **`b94ad9e`**, deployed to prod. Everything from the dry run is LIVE (Path A, sweep,
+> B-08 over-billing fix, role gating) **plus the super-admin firm-switcher and the AP-03 display-rate
+> fix.** **P&L June reconciliation is DONE; June drafts generated + verified at 74 invoices /
+> $45,987.50; the Billing Run/Queue now displays each client's real rate (was showing $125 for all).**
+> **Immediate next = Lea Ann reviews the corrected on-screen numbers and sends June in batches**
+> (watch Copper Peaks single-invoice confirm + TC-14 bulk-send rate limits). See the 2026-07-01
+> session section below. Next code work branches off the current integration tip
+> `origin/claude/cta-integrity-onboarding-test-7tazih` (NOT a local checkout).
+
+## 2026-07-01 — P&L FIRST BILLING VALIDATION (June work, invoices dated 07/01)
+**Inputs received from Lea Ann:** her email reply (rates + blank-billable answers) and her full June
+QBO "Time Activities by Client Detail" report (`P&L Business Services, LLC_Time Activities by Client
+Detail (9).xlsx`, root dir). Advisor artifacts written this session:
+`dry-run-logs/june-billing-preview.csv` (per-client billing preview) and
+`dry-run-logs/agent-prompts.md` (AP-01/02/03 staged fix prompts).
+
+**Lea Ann's answers (resolved the open questions):**
+- **Rates are single-rate per client** (no per-entry-rate feature gap). Her earlier $125 "slips" on
+  Oak Ridge Chamber / Danny Johnson / Morristown are fixed on the QBO side; per-customer
+  `hourly_rate_override` fully covers it.
+- **Flat-rate clients** (IT 4 The Planet, Kennedy Dentistry, Dale Skidmore, both honor guards) — she
+  tracks time for annual review only; all have **zero billable time** in June, so no invoice. PTO is
+  always "No".
+- **Blank-billable** — she + Amber fixed the real client ones in QB Time and re-approved; app now shows
+  **0 blank** per client.
+
+**🔴 Root cause found — stale June sync (NOT a code bug):** `handleSyncNow()`
+(InvoicesClient.tsx:2699) hardcodes the sync window to the **current wall-clock month**. On July 1 every
+"Sync Now" pulled JULY; June was frozen at the 06-29 15:16 snapshot, missing all late-June + this-morning
+entries. **Fix applied operationally:** ran a June-range sync via browser console
+(`POST /api/qb-time/sync-timesheets {start_date:'2026-06-01',end_date:'2026-06-30'}` while impersonating
+P&L) → 1,222 records, swept 1. This recurs every month (you always bill the prior month after month-end)
+→ real fix is to make the sync follow the selected billing month (backlog, add as an agent prompt).
+
+**Reconciliation (app vs her QBO report):** after the June re-sync, **69/76 clients matched to the
+minute**; whole book within 0.9h. Residual deltas were 3 single entries where the app is MORE correct
+than her report (Knox PT 38m "PTO Logs", Oak Ridge Public Schools 22m "payroll", Sunago 15m login — all
+correctly excluded as non-billable). Confirms we bill from the app/QB Time, per her "QB Time is the
+standard of truth".
+
+**Data changes applied to live P&L (all firm-scoped, verified via RETURNING):**
+1. **11 rate overrides** set on `customers.hourly_rate_override`: $75 ×10 (Dandridge School Lofts,
+   Danny Johnson Excavating - New, Duke Development Company, Duke Sevierville, Imaginationz Dentistry
+   PLLC, Johnson's Depot & Deli, Lendall Roberts, Morristown Dentistry PLLC, Oak Ridge Chamber of
+   Commerce, United Way of Anderson County) + $100 ×1 (Catamount Mgmt). Overrides also neutralize
+   leftover $125-slip entries in QB Time for those customers.
+2. **P&L Admin excluded** (`exclude_from_billing=true`) — one internal entry was flagged billable and
+   would have self-billed $62.50; all 6 internal jobcodes (P&L Admin, Lea Ann's Work, Networking, New
+   Client Consultations, Tax Returns, PTO) map to this one customer, so one exclude backstops all.
+
+**June drafts GENERATED + verified in DB:** run `092461f6-…`, billing_month 2026-06-01, status pending,
+**74 drafts / $45,987.50 / 394.25 rounded hrs / 0 zero-amount**, P&L Admin absent. Split: $125 ×63 =
+$41,031.25, $75 ×10 = $4,931.25, $100 ×1 = $25.00. All 11 override drafts carry the correct
+`draft.hourly_rate` (75/100) and `total_amount`. Matches `june-billing-preview.csv` exactly.
+
+**🔴 Display bug (AP-03, PRE-SEND BLOCKER — data + send are CORRECT, only the screen is wrong):** the
+Billing Run dashboard + Invoice Queue compute displayed dollars as `hours × invoiceStates.rate`, and that
+rate is seeded from the firm default $125 for everyone (InvoicesClient.tsx ~2695), ignoring the override.
+Screen shows **Proposed Billing $49,281.25** (394.25h × $125) vs real **$45,987.50** — the $3,293.75 gap is
+the 11 $75/$100 clients rendered at $125. **Send is safe** (`send/route.ts:57,118` uses `draft.hourly_rate`;
+UI rate edits aren't even persisted). Fix = plumb `draft.hourly_rate` into templates and seed the UI rate
+from it. AP-03 staged in `agent-prompts.md`; Matt is running it (Agent 3). Advisor to regression-check the
+diff, verify on PREVIEW (Proposed Billing = $45,987.50), then merge to main on Matt's say-so.
+
+**Open items for the send stage:**
+- **Copper Peaks** bills as ONE invoice (9.50h/$1,187.50) covering both `Copper Peaks Solutions` +
+  `COPPER PEAKS LLC` jobcodes (both $125). Confirm with Lea Ann they're one client (merging vs two invoices
+  costs the client $31.25 in single-vs-double rounding). Other same-rate merges (Adams ×2, Complete
+  Construction ×2, Detail Driven +Payroll Only, Morristown +Payroll Returns) are fine — just intended-mapping
+  confirmations.
+- **Sunago Coffee** bills $31.25 off a single 6-min billable entry — trivial; confirm she wants it.
+- **Batch the sends** — 74 invoices; "Send All" is parallel `Promise.all` (TC-14 rate-limit risk). Send a
+  handful first, confirm QBO/BillerGenie, then the rest.
+- **Run label:** header reads "July 2026 Billing Run / June 2026 Time Entries" (labels by invoice month
+  07/01). Confirm that matches Lea Ann's mental model or tweak the label.
+
+**Staged agent prompts (`dry-run-logs/agent-prompts.md`):** AP-01 paginate time_entries reads (removes
+~1,000-row PostgREST cap; engine safe today at 626 rows but latent under-bill risk — PARKED branch,
+do-not-merge); AP-02 self-serve per-client rate editor in Client Rules (persist `hourly_rate_override`);
+AP-03 display-rate fix (above, urgent).
 
 ## P&L LIVE ONBOARDING (call 2026-06-29 — transcript in call_transcripts/2026-06-29-…md)
 **Done:** Lea Ann logged in (temp pw `password123`); QBO realm `9130349883156876` + QB Time
@@ -57,11 +131,13 @@ while impersonating EXCEPT real invoice sends** (his decision).
   (verified), but **agents must branch off the current integration tip**; (b) the agents gated the
   firm *context* but missed cross-firm *read access* (RLS) — caught by preview testing before main.
 
-## DEPLOY STATE — `main` = integration = `7304ff6`, all LIVE on app.clocktobill.com
+## DEPLOY STATE — `main` = integration = `b94ad9e`, all LIVE on app.clocktobill.com
 - Empty-state batch (B-01..B-04); Path B `exclude_from_billing` (column on prod) + engine skip +
   customers PATCH; sweep (B-05, **verified live**); Path A per-entry billable (B-07, **verified
   e2e**); role gating (`isOwner`); billable badge color; B-08 over-billing UI/send fix (**verified
-  live** — Greenleaf 3.00/$375, non-billable present-but-excluded); super-admin firm-switcher.
+  live** — Greenleaf 3.00/$375, non-billable present-but-excluded); super-admin firm-switcher
+  (`7304ff6`); **AP-03 display-rate fix (`b94ad9e`, shipped 2026-07-01) — Billing Run/Queue now show
+  each draft's real rate instead of firm-default $125.**
 - **Deploy rule:** merge to `main` from the **remote** integration ref
   (`origin/claude/cta-integrity-onboarding-test-7tazih`), never a local checkout (a stale local
   checkout once fast-forwarded main to the wrong commit). Vercel auto-deploys prod from main.
@@ -118,8 +194,11 @@ while impersonating EXCEPT real invoice sends** (his decision).
 - Super-admin firm-switcher — SHIPPED + verified (preview + main).
 
 ## How to resume the advisor
-Fresh advisor auto-loads CLAUDE.md. Read this doc + ONBOARDING-DRY-RUN-TEST-PLAN.md (§7 +
-Appendices A/C) + dry-run-logs/*.md. Resume advise-only. **Immediate action: when Lea Ann replies
-with the rate/blank answers + her June QB Time report, run the per-client reconciliation (rates,
-billable match, rounding, mapping/dupes), set per-client rate overrides, regenerate, confirm —
-before she sends.** Next code work branches off `7304ff6`. Paste latest agent/Lea-Ann output to continue.
+Fresh advisor auto-loads CLAUDE.md. Read this doc (esp. the 2026-07-01 session section) +
+ONBOARDING-DRY-RUN-TEST-PLAN.md (§7 + Appendices A/C) + dry-run-logs/*.md +
+dry-run-logs/june-billing-preview.csv. Resume advise-only. **Immediate action: June reconciliation is
+DONE and drafts are generated + verified (74 / $45,987.50). Next = regression-check Agent 3's AP-03
+display-rate fix, verify on preview (Proposed Billing must read $45,987.50, not $49,281.25), merge to
+main on Matt's say-so, then Lea Ann reviews and sends June in batches** (watch Copper Peaks single-invoice
+confirmation + TC-14 bulk-send). Next code work branches off the current integration tip. Paste latest
+agent/Lea-Ann output to continue.
